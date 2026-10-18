@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, Rocket, Square, Check, X } from "lucide-react";
-import { api, pickFolder } from "../lib/api";
+import { api, isDesktop, pickFolder } from "../lib/api";
 import type { ClipOutcome, ExportProgress, Preset, Project } from "../lib/types";
 import { formatBytes, formatDuration } from "../lib/time";
 import { Button, ErrorBanner, Panel, SuccessBanner } from "./ui";
@@ -136,11 +136,11 @@ export function ExportPanel({ project, sourceMissing, onChange }: Props) {
           <div className="min-w-0 flex-1 truncate rounded-lg border border-line bg-raised px-3 py-2 font-mono text-[12px]" title={outDir}>
             {outDir || "…"}
           </div>
-          <Button onClick={chooseFolder} disabled={busy} aria-label="Choose output folder">
+          {isDesktop() && <Button onClick={chooseFolder} disabled={busy} aria-label="Choose output folder">
             <FolderOpen className="h-4 w-4" /> Choose
-          </Button>
+          </Button>}
         </div>
-        <p className="mt-1 text-[11px] text-mute">Your original video is never modified. Existing files are never overwritten.</p>
+        <p className="mt-1 text-[11px] text-mute">Your original video is never modified. Browser exports download as WebM files.</p>
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -209,7 +209,7 @@ export function ExportPanel({ project, sourceMissing, onChange }: Props) {
                     className="shrink-0 text-ember hover:underline"
                     onClick={() => o.output_path && void api.revealInFinder(o.output_path).catch((e: Error) => setError(e.message))}
                   >
-                    Show in Finder
+                    {isDesktop() ? "Show in Finder" : "Downloaded"}
                   </button>
                 </li>
               ))}
