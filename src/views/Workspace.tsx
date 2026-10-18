@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { videoSrc } from "../lib/api";
 import { ArrowLeft, FilePlus2, Film, Pause, Play, PlayCircle, RefreshCw, Save } from "lucide-react";
 import { api, pickVideo } from "../lib/api";
 import { newId, projectStatus, useProjects } from "../lib/projects";
@@ -32,6 +32,15 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const [sourceMissing, setSourceMissing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [relinking, setRelinking] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSourceUrl(null);
+    if (!source) return;
+    videoSrc(source.path).then((url) => { if (!cancelled) setSourceUrl(url); }).catch(() => { if (!cancelled) setPreviewFailed(true); });
+    return () => { cancelled = true; };
+  }, [source?.path]);
 
   // Confirm the file is still there (this also re-enables preview access).
   useEffect(() => {
@@ -275,7 +284,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                 ) : (
                   <video
                     ref={videoRef}
-                    src={convertFileSrc(source.path)}
+                    src={sourceUrl ?? undefined}
                     className="h-full w-full object-contain"
                     preload="metadata"
                     playsInline
