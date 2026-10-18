@@ -104,7 +104,7 @@ async function browserExport(job: {source:string;out_dir:string;preset:Preset;pa
       const chunks: BlobPart[]=[];
       const stopped=new Promise<Blob>((resolve,reject)=>{recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onerror=()=>reject(new Error("Browser recording failed."));recorder.onstop=()=>resolve(new Blob(chunks,{type:mime}));});
       video.currentTime=clip.start; await new Promise<void>(r=>{video.onseeked=()=>r()});
-      const draw=()=>{if(video.paused && !recorder || video.ended)return; const sw=video.videoWidth,sh=video.videoHeight; const cropW=Math.min(sw,sh*ratio),cropH=cropW/ratio; const sx=(sw-cropW)*job.pan; const sy=(sh-cropH)*0.5; ctx.drawImage(video,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);};
+      const draw=()=>{if(video.paused && !recorder || video.ended)return; const sw=video.videoWidth,sh=video.videoHeight; const cropW=Math.min(sw,sh*ratio),cropH=cropW/ratio; const sx=(sw-cropW)*job.pan; const sy=(sw-cropW < 1 ? (sh-cropH)*job.pan : (sh-cropH)*job.pan); ctx.drawImage(video,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);};
       let raf=0; const frame=()=>{draw(); if(video.currentTime < clip.end && !video.paused) raf=requestAnimationFrame(frame); else if(recorder.state==="recording") recorder.stop();};
       recorder.start(250); await video.play(); raf=requestAnimationFrame(frame);
       const timer=setTimeout(()=>{if(recorder.state==="recording")recorder.stop();video.pause();cancelAnimationFrame(raf)},Math.max(500,(clip.end-clip.start)*1000+500));
