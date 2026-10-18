@@ -13,7 +13,7 @@
 set -euo pipefail
 
 FFMPEG_TAG="n7.1.1"
-FFMPEG_COMMIT="a1328e68877e12ab5a6e5d92a84aefa566783ea5"
+FFMPEG_COMMIT="db69d06eeeab4f46da15030a80d539efb4503ca8"
 X264_REPO="https://code.videolan.org/videolan/x264.git"
 X264_BRANCH="stable"
 
