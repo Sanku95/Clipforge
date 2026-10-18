@@ -72,7 +72,7 @@ fi
     --prefix="$PREFIX/ffmpeg-install" \
     --pkg-config-flags=--static \
     --extra-cflags="-I$PREFIX/include" \
-    --extra-ldflags="-L$PREFIX/lib" \
+    --extra-ldflags="-L$PREFIX/lib -liconv" \
     --disable-autodetect \
     --disable-debug --disable-doc --disable-ffplay --disable-network \
     --disable-shared --enable-static \
