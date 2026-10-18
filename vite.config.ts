@@ -7,5 +7,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: { port: 1420, strictPort: true },
+  base: "/Clipforge/",
   build: { target: "safari15", outDir: "dist", emptyOutDir: true }
 });
