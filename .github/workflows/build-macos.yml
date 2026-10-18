@@ -53,7 +53,9 @@ jobs:
           key: ffmpeg-${{ matrix.triple }}-${{ hashFiles('scripts/build-ffmpeg-macos.sh') }}
 
       - name: Build FFmpeg (GPL, libx264) from official source
-        run: bash scripts/build-ffmpeg-macos.sh
+        env:
+          CI_EXTRA_LOG: ${{ github.workspace }}/.cache/ffbuild/ffmpeg/ffbuild/config.log
+        run: bash scripts/ci-run.sh "FFmpeg build" bash scripts/build-ffmpeg-macos.sh
 
       - uses: actions/setup-node@v4
         with:
@@ -69,63 +71,18 @@ jobs:
 
       - name: Frontend typecheck and tests
         run: |
-          npm run typecheck
-          npm test
+          bash scripts/ci-run.sh "Typecheck" npm run typecheck
+          bash scripts/ci-run.sh "Frontend tests" npm test
 
       - name: Core tests against the bundled FFmpeg
-        run: cargo test -p clipforge-core
+        run: bash scripts/ci-run.sh "Core tests" cargo test -p clipforge-core
 
       - name: Build app and DMG
-        run: npx tauri build
+        run: bash scripts/ci-run.sh "Tauri build" npx tauri build
 
       - name: Verify the DMG and the installed app
         id: verify
-        run: |
-          set -euo pipefail
-          DMG="$(ls target/release/bundle/dmg/*.dmg | head -1)"
-          echo "DMG: $DMG"
-          ls -lh "$DMG"
-          hdiutil verify "$DMG"
-
-          MNT="$(mktemp -d)"
-          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
-          trap 'hdiutil detach "$MNT" -force >/dev/null 2>&1 || true' EXIT
-          echo "--- DMG contents"; ls -la "$MNT"
-          test -d "$MNT/ClipForge.app"
-
-          # Simulate installation: copy the app out of the DMG.
-          INSTALL="$(mktemp -d)"
-          ditto "$MNT/ClipForge.app" "$INSTALL/ClipForge.app"
-          APP="$INSTALL/ClipForge.app"
-          EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
-          echo "executable: $EXE"
-          echo "exe=$EXE" >> "$GITHUB_OUTPUT"
-          echo "app=$APP" >> "$GITHUB_OUTPUT"
-
-          echo "--- bundle layout"
-          for f in "MacOS/$EXE" "MacOS/ffmpeg" "MacOS/ffprobe" "Resources/THIRD_PARTY_NOTICES.md" "Resources/licenses/BUILD-INFO.txt" "Resources/icon.icns"; do
-            test -e "$APP/Contents/$f" || { echo "MISSING in app: $f"; exit 1; }
-            echo "ok  $f"
-          done
-
-          echo "--- architectures"
-          for f in "$EXE" ffmpeg ffprobe; do
-            archs="$(lipo -archs "$APP/Contents/MacOS/$f")"
-            echo "$f: $archs"
-            [ "$archs" = "${{ matrix.arch == 'aarch64' && 'arm64' || 'x86_64' }}" ]
-          done
-
-          echo "--- code signature"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign -dv "$APP" 2>&1 | grep -E "Signature|Identifier|TeamIdentifier" || true
-
-          echo "--- self-test of the INSTALLED app (bundled ffmpeg, all presets)"
-          "$APP/Contents/MacOS/$EXE" --selftest
-
-          mkdir -p dist
-          cp "$DMG" "dist/ClipForge_${{ matrix.arch }}.dmg"
-          (cd dist && shasum -a 256 "ClipForge_${{ matrix.arch }}.dmg" > "ClipForge_${{ matrix.arch }}.dmg.sha256")
-          cat "dist/ClipForge_${{ matrix.arch }}.dmg.sha256"
+        run: bash scripts/ci-run.sh "DMG verification" bash scripts/ci-verify-macos.sh ${{ matrix.arch == 'aarch64' && 'arm64' || 'x86_64' }} ${{ matrix.arch }}
 
       - name: Launch smoke test (GUI starts and stays running)
         id: launch

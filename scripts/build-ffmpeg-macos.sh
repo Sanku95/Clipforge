@@ -104,15 +104,17 @@ for tool in ffmpeg ffprobe; do
 done
 
 VERSION_TEXT="$("$OUT/ffmpeg-$TRIPLE" -hide_banner -version)"
-echo "$VERSION_TEXT" | head -3
-echo "$VERSION_TEXT" | grep -q -- '--enable-gpl'     || { echo "expected a GPL build" >&2; exit 1; }
-echo "$VERSION_TEXT" | grep -q -- '--enable-libx264' || { echo "libx264 missing" >&2; exit 1; }
-if echo "$VERSION_TEXT" | grep -q -- '--enable-nonfree'; then
+ENCODERS_TEXT="$("$OUT/ffmpeg-$TRIPLE" -hide_banner -encoders)"
+head -3 <<<"$VERSION_TEXT"
+# Here-strings (not pipes) so `grep -q` exiting early can't cause a SIGPIPE failure.
+grep -q -- '--enable-gpl'     <<<"$VERSION_TEXT" || { echo "expected a GPL build" >&2; exit 1; }
+grep -q -- '--enable-libx264' <<<"$VERSION_TEXT" || { echo "libx264 missing" >&2; exit 1; }
+if grep -q -- '--enable-nonfree' <<<"$VERSION_TEXT"; then
   echo "FFmpeg was built with --enable-nonfree; that binary cannot be redistributed." >&2
   exit 1
 fi
-"$OUT/ffmpeg-$TRIPLE" -hide_banner -encoders | grep -q ' libx264 ' || { echo "libx264 encoder not available" >&2; exit 1; }
-"$OUT/ffmpeg-$TRIPLE" -hide_banner -encoders | grep -q ' aac '    || { echo "aac encoder not available" >&2; exit 1; }
+grep -q ' libx264 ' <<<"$ENCODERS_TEXT" || { echo "libx264 encoder not available" >&2; exit 1; }
+grep -q ' aac '     <<<"$ENCODERS_TEXT" || { echo "aac encoder not available" >&2; exit 1; }
 "$OUT/ffprobe-$TRIPLE" -hide_banner -version >/dev/null
 
 # ---- License texts + exact source information (shipped inside the app) ------
@@ -130,7 +132,7 @@ cp x264/COPYING         "$LIC/X264-COPYING"
   echo "  source : https://code.videolan.org/videolan/x264/-/tree/$X264_COMMIT"
   echo
   echo "Configuration:"
-  echo "$VERSION_TEXT" | grep '^configuration:' || true
+  grep '^configuration:' <<<"$VERSION_TEXT" || true
   echo
   echo "Both are licensed under the GNU GPL. ClipForge runs these as separate programs."
 } > "$LIC/BUILD-INFO.txt"
