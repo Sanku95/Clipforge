@@ -92,7 +92,7 @@ async function browserExport(job: {source:string;out_dir:string;preset:Preset;pa
     const clip=job.clips[index];
     try {
       const ratio = job.preset === "vertical" ? 9/16 : job.preset === "square" ? 1 : job.preset === "landscape" ? 16/9 : video.videoWidth/video.videoHeight;
-      const width = job.preset === "original" ? video.videoWidth : ratio === 1 ? Math.min(video.videoWidth,video.videoHeight) : ratio > 1 ? Math.min(video.videoWidth,Math.round(video.videoHeight*ratio)) : Math.min(video.videoHeight,Math.round(video.videoWidth/ratio));
+      const width = job.preset === "original" ? video.videoWidth : ratio === 1 ? Math.min(video.videoWidth,video.videoHeight) : ratio > 1 ? Math.min(video.videoWidth,Math.round(video.videoHeight*ratio)) : Math.min(video.videoWidth,Math.round(video.videoHeight*ratio));
       const height = Math.round(width/ratio);
       const canvas=document.createElement("canvas"); canvas.width=Math.max(2,width); canvas.height=Math.max(2,height);
       const ctx=canvas.getContext("2d"); if(!ctx) throw new Error("Canvas video processing is unavailable.");
