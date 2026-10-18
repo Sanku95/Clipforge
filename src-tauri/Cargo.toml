@@ -3,7 +3,6 @@ name = "clipforge"
 version = "0.1.0"
 edition = "2021"
 description = "ClipForge - local-first video clipping for short-form platforms"
-license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

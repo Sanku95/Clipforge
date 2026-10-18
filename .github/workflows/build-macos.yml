@@ -1,0 +1,196 @@
+name: Build macOS app
+
+on:
+  push:
+    branches: [main, feature/desktop-app]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a GitHub pre-release with this tag (e.g. v0.1.0). Leave empty to only build."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            arch: aarch64
+            triple: aarch64-apple-darwin
+            runner: macos-latest
+          - name: Intel
+            arch: x86_64
+            triple: x86_64-apple-darwin
+            runner: macos-15-intel
+    env:
+      CLIPFORGE_FFMPEG: ${{ github.workspace }}/src-tauri/binaries/ffmpeg-${{ matrix.triple }}
+      CLIPFORGE_FFPROBE: ${{ github.workspace }}/src-tauri/binaries/ffprobe-${{ matrix.triple }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install nasm pkgconf
+
+      - name: Restore FFmpeg build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/binaries
+            src-tauri/resources/licenses
+          key: ffmpeg-${{ matrix.triple }}-${{ hashFiles('scripts/build-ffmpeg-macos.sh') }}
+
+      - name: Build FFmpeg (GPL, libx264) from official source
+        run: bash scripts/build-ffmpeg-macos.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Frontend typecheck and tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Core tests against the bundled FFmpeg
+        run: cargo test -p clipforge-core
+
+      - name: Build app and DMG
+        run: npx tauri build
+
+      - name: Verify the DMG and the installed app
+        id: verify
+        run: |
+          set -euo pipefail
+          DMG="$(ls target/release/bundle/dmg/*.dmg | head -1)"
+          echo "DMG: $DMG"
+          ls -lh "$DMG"
+          hdiutil verify "$DMG"
+
+          MNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
+          trap 'hdiutil detach "$MNT" -force >/dev/null 2>&1 || true' EXIT
+          echo "--- DMG contents"; ls -la "$MNT"
+          test -d "$MNT/ClipForge.app"
+
+          # Simulate installation: copy the app out of the DMG.
+          INSTALL="$(mktemp -d)"
+          ditto "$MNT/ClipForge.app" "$INSTALL/ClipForge.app"
+          APP="$INSTALL/ClipForge.app"
+          EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          echo "executable: $EXE"
+          echo "exe=$EXE" >> "$GITHUB_OUTPUT"
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+
+          echo "--- bundle layout"
+          for f in "MacOS/$EXE" "MacOS/ffmpeg" "MacOS/ffprobe" "Resources/THIRD_PARTY_NOTICES.md" "Resources/licenses/BUILD-INFO.txt" "Resources/icon.icns"; do
+            test -e "$APP/Contents/$f" || { echo "MISSING in app: $f"; exit 1; }
+            echo "ok  $f"
+          done
+
+          echo "--- architectures"
+          for f in "$EXE" ffmpeg ffprobe; do
+            archs="$(lipo -archs "$APP/Contents/MacOS/$f")"
+            echo "$f: $archs"
+            [ "$archs" = "${{ matrix.arch == 'aarch64' && 'arm64' || 'x86_64' }}" ]
+          done
+
+          echo "--- code signature"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E "Signature|Identifier|TeamIdentifier" || true
+
+          echo "--- self-test of the INSTALLED app (bundled ffmpeg, all presets)"
+          "$APP/Contents/MacOS/$EXE" --selftest
+
+          mkdir -p dist
+          cp "$DMG" "dist/ClipForge_${{ matrix.arch }}.dmg"
+          (cd dist && shasum -a 256 "ClipForge_${{ matrix.arch }}.dmg" > "ClipForge_${{ matrix.arch }}.dmg.sha256")
+          cat "dist/ClipForge_${{ matrix.arch }}.dmg.sha256"
+
+      - name: Launch smoke test (GUI starts and stays running)
+        id: launch
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          open -n "${{ steps.verify.outputs.app }}"
+          sleep 15
+          if pgrep -x "${{ steps.verify.outputs.exe }}" >/dev/null; then
+            echo "App is running after 15s."
+            pkill -x "${{ steps.verify.outputs.exe }}" || true
+          else
+            echo "App is NOT running after 15s."
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.name }} (${{ matrix.triple }})"
+            echo "- Build + DMG + installed-app self-test: \`${{ steps.verify.outcome }}\`"
+            echo "- GUI launch smoke test: \`${{ steps.launch.outcome }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-${{ matrix.arch }}-dmg
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish pre-release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ClipForge-*-dmg
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+        run: |
+          cat > notes.md <<'EOF'
+          **Which file?** Apple menu → About This Mac. "Chip: Apple M…" → `ClipForge_aarch64.dmg`. "Processor: Intel…" → `ClipForge_x86_64.dmg`.
+
+          **Install:** open the DMG and drag ClipForge to Applications.
+
+          **First launch:** this build is *not* signed with an Apple Developer ID or notarized, so macOS will block it the first time.
+          Open System Settings → Privacy & Security, scroll to the message about ClipForge, and click **Open Anyway**.
+          (On macOS 14 and earlier you can also right-click the app and choose Open.)
+
+          Verify your download against the `.sha256` file. FFmpeg/x264 source information is inside the app (`Contents/Resources/licenses/BUILD-INFO.txt`).
+          EOF
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "ClipForge $TAG" \
+            --notes-file notes.md

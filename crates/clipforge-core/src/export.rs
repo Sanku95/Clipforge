@@ -175,7 +175,12 @@ fn build_args(
         Encoder::X264 => a.extend(
             ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"].map(String::from),
         ),
-        Encoder::VideoToolbox => a.extend(["-c:v", "h264_videotoolbox", "-b:v", "10M"].map(String::from)),
+        Encoder::VideoToolbox => {
+            // Hardware encoder has no CRF mode, so scale the bitrate with the output size.
+            let fps = if info.fps > 1.0 && info.fps <= 120.0 { info.fps } else { 30.0 };
+            let bps = ((tw as f64) * (th as f64) * fps * 0.12).clamp(4_000_000.0, 40_000_000.0) as u64;
+            a.extend(["-c:v".to_string(), "h264_videotoolbox".to_string(), "-b:v".to_string(), bps.to_string()]);
+        }
     }
     a.extend(
         [
