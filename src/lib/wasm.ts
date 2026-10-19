@@ -105,7 +105,7 @@ export function probe(file: File): Promise<ProbeResult> {
 }
 
 /** Small, fast H.264 copy so the browser can preview formats it cannot play itself (MKV, AVI, ...). */
-export function makePreview(file: File, onProgress?: (fraction: number) => void): Promise<Blob> {
+export function makePreview(file: File, onProgress?: (fraction: number) => void, segment?: { start: number; end: number }): Promise<Blob> {
   return serial(async () => {
     const ff = await engine();
     cancelled = false;
@@ -114,7 +114,7 @@ export function makePreview(file: File, onProgress?: (fraction: number) => void)
     try {
       return await withInput(ff, file, async (path) => {
         const code = await ff.exec([
-          "-hide_banner", "-i", path, "-map", "0:v:0", "-map", "0:a:0?",
+          "-hide_banner", ...(segment ? ["-ss", Math.max(0, segment.start).toFixed(3)] : []), "-i", path, ...(segment ? ["-t", Math.max(0.5, segment.end - segment.start).toFixed(3)] : []), "-map", "0:v:0", "-map", "0:a:0?",
           "-vf", "scale=-2:360,fps=15", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "64k", "-ac", "2", "-movflags", "+faststart", "-y", "preview.mp4"
         ]);
