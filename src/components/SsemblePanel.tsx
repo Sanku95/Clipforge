@@ -42,6 +42,10 @@ export function SsemblePanel() {
   const generate = async () => {
     setError("");
     setJob(null);
+    if (window.location.hostname.endsWith("github.io")) {
+      setError("AI clipping is not available on the GitHub Pages preview because it cannot run the Ssemble backend. Open the ClipForge Vercel deployment after it is configured with your Ssemble API key.");
+      return;
+    }
     setBusy(true);
     const end = Number(rangeEnd);
     if (!Number.isFinite(end) || end < 60 || end > 1200) {
