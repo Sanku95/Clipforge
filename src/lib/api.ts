@@ -230,6 +230,15 @@ async function browserExport(job: {source:string;out_dir:string;preset:Preset;pa
   return outcomes;
 }
 
+/** Transcode only the requested time range for a responsive preview of long or browser-incompatible videos. */
+export async function prepareSegmentPreview(path: string, start: number, end: number, onProgress?: (fraction: number) => void): Promise<string> {
+  if (isDesktop()) throw new Error("Segment previews are only needed in the browser version.");
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end - start < 0.5) throw new Error("Choose a valid preview segment at least half a second long.");
+  const file = await getFile(path);
+  const blob = await makePreview(file, onProgress, { start, end });
+  return URL.createObjectURL(blob);
+}
+
 export function onPrepareStatus(cb: (msg: string | null) => void): () => void {
   prepareListeners.push(cb);
   return () => { prepareListeners = prepareListeners.filter((x) => x !== cb); };
