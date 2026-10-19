@@ -9,6 +9,6 @@ export default defineConfig({
   optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"] },
   worker: { format: "es" },
   server: { port: 1420, strictPort: true },
-  base: "/Clipforge/",
+  base: process.env.GITHUB_ACTIONS === "true" ? "/Clipforge/" : "/",
   build: { target: "safari15", outDir: "dist", emptyOutDir: true }
 });
