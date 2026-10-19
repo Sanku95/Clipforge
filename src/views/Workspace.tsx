@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getPreviewState, onPreviewState, videoSrc, type PreviewState } from "../lib/api";
+import { getPreviewState, onPreviewState, videoSrc, prepareSegmentPreview, type PreviewState } from "../lib/api";
 import { ArrowLeft, FilePlus2, Film, Pause, Play, PlayCircle, RefreshCw, Save } from "lucide-react";
 import { api, pickVideo } from "../lib/api";
 import { newId, projectStatus, useProjects } from "../lib/projects";
@@ -15,6 +15,7 @@ const MIN_CLIP = 0.5;
 const PRESET_RATIO: Record<string, string | null> = { vertical: "9 / 16", square: "1 / 1", landscape: "16 / 9", original: null };
 const PRESET_LABEL: Record<string, string> = { vertical: "9:16", square: "1:1", landscape: "16:9", original: "Original" };
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const isDesktopBrowser = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export function Workspace({ projectId, onBack }: { projectId: string; onBack: () => void }) {
   const { projects, update } = useProjects();
@@ -37,10 +38,15 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const [notice, setNotice] = useState<string | null>(null);
   const [relinking, setRelinking] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [segmentOffset, setSegmentOffset] = useState(0);
+  const [segmentEnd, setSegmentEnd] = useState(0);
+  const [preparingSegment, setPreparingSegment] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setSourceUrl(null);
+    setSegmentOffset(0);
+    setSegmentEnd(0);
     setPreviewFailed(false);
     if (!source) return;
     const path = source.path;
@@ -82,10 +88,10 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
     (t: number) => {
       const v = videoRef.current;
       const clamped = Math.min(duration, Math.max(0, t));
-      if (v) v.currentTime = clamped;
+      if (v) v.currentTime = Math.max(0, Math.min(v.duration || clamped, clamped - segmentOffset));
       setPlayhead(clamped);
     },
-    [duration]
+    [duration, segmentOffset]
   );
 
   // Smooth playhead while playing; stop at the end of "play selection".
@@ -95,8 +101,9 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
     const tick = () => {
       const v = videoRef.current;
       if (v) {
-        setPlayhead(v.currentTime);
-        if (stopAt.current !== null && v.currentTime >= stopAt.current) {
+        const absoluteTime = v.currentTime + segmentOffset;
+        setPlayhead(absoluteTime);
+        if (stopAt.current !== null && absoluteTime >= stopAt.current) {
           v.pause();
           stopAt.current = null;
         }
@@ -105,7 +112,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, segmentOffset]);
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -118,7 +125,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const playSelection = () => {
     const v = videoRef.current;
     if (!v || previewFailed) return;
-    v.currentTime = inPoint;
+    v.currentTime = Math.max(0, inPoint - segmentOffset);
     stopAt.current = outPoint;
     void v.play().catch(() => setPreviewFailed(true));
   };
@@ -301,8 +308,24 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                     <Film className="mx-auto mb-2 h-8 w-8 text-ember" aria-hidden />
                     <p className="font-medium text-ink">This format can't be previewed here.</p>
                     <p className="mt-1">
-                      Trimming and export still work. Set in and out points with the time fields below.
+                      Create a short preview of just your selected in/out range. The full video stays on this device.
                     </p>
+                    {!isDesktopBrowser() && <Button className="mt-3" busy={preparingSegment} disabled={!!draftError || sourceMissing} onClick={async () => {
+                      setPreparingSegment(true);
+                      setNotice(null);
+                      try {
+                        const url = await prepareSegmentPreview(source.path, inPoint, outPoint);
+                        setSegmentOffset(inPoint);
+                        setSegmentEnd(outPoint);
+                        setSourceUrl(url);
+                        setPreviewFailed(false);
+                        setPlayhead(inPoint);
+                      } catch (e) {
+                        setNotice(e instanceof Error ? e.message : "Could not prepare this segment preview.");
+                      } finally {
+                        setPreparingSegment(false);
+                      }
+                    }}>Preview selected segment</Button>}
                   </div>
                 ) : (
                   // Show exactly what will be exported: the preset's frame, cropped at the chosen position.
@@ -325,7 +348,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                         setPlaying(false);
                         if (videoRef.current) setPlayhead(videoRef.current.currentTime);
                       }}
-                      onSeeked={() => videoRef.current && setPlayhead(videoRef.current.currentTime)}
+                      onSeeked={() => videoRef.current && setPlayhead(videoRef.current.currentTime + segmentOffset)}
                       onError={() => setPreviewFailed(true)}
                       aria-label="Video preview"
                     />
