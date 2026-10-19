@@ -39,14 +39,12 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const [relinking, setRelinking] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [segmentOffset, setSegmentOffset] = useState(0);
-  const [segmentEnd, setSegmentEnd] = useState(0);
   const [preparingSegment, setPreparingSegment] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setSourceUrl(null);
     setSegmentOffset(0);
-    setSegmentEnd(0);
     setPreviewFailed(false);
     if (!source) return;
     const path = source.path;
@@ -316,7 +314,6 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                       try {
                         const url = await prepareSegmentPreview(source.path, inPoint, outPoint);
                         setSegmentOffset(inPoint);
-                        setSegmentEnd(outPoint);
                         setSourceUrl(url);
                         setPreviewFailed(false);
                         setPlayhead(inPoint);
