@@ -38,12 +38,13 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
     setYoutubeId(null);
     try {
       const url = new URL(youtubeUrl.trim());
-      const host = url.hostname.replace(/^www\\./, "").toLowerCase();
+      let host = url.hostname.toLowerCase();
+      if (host.startsWith("www.")) host = host.slice(4);
       let id: string | null = null;
       if (host === "youtu.be") id = url.pathname.split("/").filter(Boolean)[0] ?? null;
       if (host === "youtube.com" || host === "m.youtube.com" || host === "youtube-nocookie.com") {
         if (url.pathname === "/watch") id = url.searchParams.get("v");
-        else if (/^\\/(embed|shorts|live)\\//.test(url.pathname)) id = url.pathname.split("/")[2] ?? null;
+        else if (url.pathname.startsWith("/embed/") || url.pathname.startsWith("/shorts/") || url.pathname.startsWith("/live/")) id = url.pathname.split("/")[2] ?? null;
       }
       if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) {
         setYoutubeError("Enter a valid YouTube video link.");
