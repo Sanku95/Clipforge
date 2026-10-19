@@ -117,6 +117,8 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
           )}
         </Panel>
 
+        <SsemblePanel />
+
         <div className="grid grid-cols-3 gap-4">
           <Stat label="Projects" value={projects.length} />
           <Stat label="Clips marked" value={clipCount} />
