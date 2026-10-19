@@ -343,7 +343,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                       onPlay={() => setPlaying(true)}
                       onPause={() => {
                         setPlaying(false);
-                        if (videoRef.current) setPlayhead(videoRef.current.currentTime);
+                        if (videoRef.current) setPlayhead(videoRef.current.currentTime + segmentOffset);
                       }}
                       onSeeked={() => videoRef.current && setPlayhead(videoRef.current.currentTime + segmentOffset)}
                       onError={() => setPreviewFailed(true)}

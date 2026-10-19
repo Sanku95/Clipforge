@@ -1,12 +1,14 @@
-type ApiRequest = { method?: string; query?: { id?: string } };
+import { checkAccess } from "./_guard";
+type ApiRequest = { method?: string; headers?: Record<string, unknown>; query?: { id?: string } };
 type ApiResponse = { status: (code: number) => ApiResponse; json: (body: unknown) => void; setHeader: (name: string, value: string) => void };
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed." });
   }
-  const apiKey = process.env.SSEMBLE_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: "Ssemble is not configured yet. Add the SSEMBLE_API_KEY environment variable in Vercel." });
+  const gate = checkAccess(process.env, req.headers?.["x-access-code"]);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+  const apiKey = process.env.SSEMBLE_API_KEY as string;
   const id = req.query?.id;
   if (typeof id !== "string" || !/^[a-fA-F0-9]{24}$/.test(id)) return res.status(400).json({ error: "Invalid Ssemble request ID." });
   try {

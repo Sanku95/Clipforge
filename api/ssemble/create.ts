@@ -1,12 +1,16 @@
-type ApiRequest = { method?: string; body?: { url?: unknown; start?: unknown; end?: unknown; maxShorts?: unknown; language?: unknown; preferredLength?: unknown } };
+import { checkAccess, clientKey, makeLimiter, pickLanguage, pickLength } from "./_guard";
+const allow = makeLimiter(5, 10 * 60 * 1000);
+type ApiRequest = { method?: string; headers?: Record<string, unknown>; body?: { url?: unknown; start?: unknown; end?: unknown; maxShorts?: unknown; language?: unknown; preferredLength?: unknown } };
 type ApiResponse = { status: (code: number) => ApiResponse; json: (body: unknown) => void; setHeader: (name: string, value: string) => void };
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed." });
   }
-  const apiKey = process.env.SSEMBLE_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: "Ssemble is not configured yet. Add the SSEMBLE_API_KEY environment variable in Vercel." });
+  const gate = checkAccess(process.env, req.headers?.["x-access-code"]);
+  if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+  if (!allow(clientKey(req.headers))) return res.status(429).json({ error: "Too many requests. Please wait a few minutes." });
+  const apiKey = process.env.SSEMBLE_API_KEY as string;
   const { url, start, end, maxShorts, language, preferredLength } = req.body ?? {};
   if (typeof url !== "string") return res.status(400).json({ error: "Paste a YouTube video URL." });
   let parsed: URL;
@@ -26,7 +30,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const upstream = await fetch("https://aiclipping.ssemble.com/api/v1/shorts/create", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
-      body: JSON.stringify({ url: parsed.toString(), start: startSeconds, end: endSeconds, maxShorts: count, language: typeof language === "string" ? language : "en", preferredLength: typeof preferredLength === "string" ? preferredLength : "under60sec" })
+      body: JSON.stringify({ url: parsed.toString(), start: startSeconds, end: endSeconds, maxShorts: count, language: pickLanguage(language), preferredLength: pickLength(preferredLength) })
     });
     const data = await upstream.json().catch(() => ({}));
     if (!upstream.ok) return res.status(upstream.status).json({ error: data?.error?.message ?? data?.message ?? "Ssemble could not start this request.", details: data?.error?.code });

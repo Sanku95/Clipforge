@@ -18,13 +18,18 @@ export function SsemblePanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [accessCode, setAccessCode] = useState(() => { try { return sessionStorage.getItem("clipforge.access") ?? ""; } catch { return ""; } });
+  const [length, setLength] = useState("under60sec");
+  const [agreed, setAgreed] = useState(false);
+  const authHeaders = (): Record<string, string> => ({ "x-access-code": accessCode });
+  const rememberCode = (v: string) => { setAccessCode(v); try { sessionStorage.setItem("clipforge.access", v); } catch { /* ignore */ } };
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => () => { if (pollRef.current !== null) window.clearTimeout(pollRef.current); }, []);
 
   const checkStatus = async (id: string) => {
     try {
-      const response = await fetch(`/api/ssemble/status?id=${encodeURIComponent(id)}`);
+      const response = await fetch(`/api/ssemble/status?id=${encodeURIComponent(id)}`, { headers: authHeaders() });
       if (!response.ok) throw new Error(await apiError(response));
       const data = await response.json() as JobState;
       setJob(data);
@@ -56,8 +61,8 @@ export function SsemblePanel() {
     try {
       const response = await fetch("/api/ssemble/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: sourceUrl, start: 0, end, maxShorts: Number(maxShorts), language })
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ url: sourceUrl, start: 0, end, maxShorts: Number(maxShorts), language, preferredLength: length })
       });
       if (!response.ok) throw new Error(await apiError(response));
       const data = await response.json();
@@ -102,13 +107,27 @@ export function SsemblePanel() {
         <label className="block text-sm">
           <span className="mb-1.5 block font-medium">Spoken language</span>
           <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-lg border border-line bg-panel px-3 py-2.5">
-            <option value="en">English</option><option value="hi">Hindi</option><option value="mr">Marathi</option><option value="es">Spanish</option><option value="pt">Portuguese</option>
+            <option value="en">English</option><option value="hi">Hindi</option><option value="mr">Marathi</option><option value="es">Spanish</option><option value="pt">Portuguese</option><option value="fr">French</option><option value="de">German</option><option value="ar">Arabic</option><option value="ja">Japanese</option><option value="ko">Korean</option><option value="id">Indonesian</option><option value="tr">Turkish</option>
           </select>
         </label>
       </div>
+      <label className="block text-sm">
+        <span className="mb-1.5 block font-medium">Preferred clip length</span>
+        <select value={length} onChange={(e) => setLength(e.target.value)} className="w-full rounded-lg border border-line bg-panel px-3 py-2.5">
+          <option value="under30sec">Under 30 seconds</option><option value="under60sec">Under 60 seconds</option><option value="under90sec">Under 90 seconds</option><option value="under3min">Under 3 minutes</option>
+        </select>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1.5 block font-medium">Access code</span>
+        <input value={accessCode} onChange={(e) => rememberCode(e.target.value)} type="password" autoComplete="off" placeholder="Set as CLIPFORGE_ACCESS_CODE on the server" className="w-full rounded-lg border border-line bg-panel px-3 py-2.5 text-sm outline-none focus:border-ember" />
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1" />
+        <span>I own this video or have permission to process it, and I understand the link is sent to Ssemble.</span>
+      </label>
       <p className="text-xs text-mute">Each generation request uses one Ssemble credit. Processing usually takes 5–30 minutes. YouTube Shorts links are not supported by their API; use a standard video URL.</p>
       {error && <p role="alert" className="rounded-lg border border-red-900/60 bg-red-950/20 p-3 text-sm text-red-300">{error}</p>}
-      <Button variant="primary" onClick={() => void generate()} busy={busy} disabled={!sourceUrl.trim() || busy}><Sparkles className="h-4 w-4" /> Generate AI clips</Button>
+      <Button variant="primary" onClick={() => void generate()} busy={busy} disabled={!sourceUrl.trim() || !agreed || !accessCode || busy}><Sparkles className="h-4 w-4" /> Generate AI clips</Button>
       {job && (
         <div role="status" aria-live="polite" className="space-y-3 rounded-xl border border-line p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -119,7 +138,8 @@ export function SsemblePanel() {
           {job.message && <p className="text-sm text-mute">{job.message}</p>}
           {job.status === "failed" && <p className="text-sm text-red-300">Ssemble reported a processing failure. Try a shorter analysis range.</p>}
           {shorts.length > 0 && <ul className="space-y-2">{shorts.map((short, index) => {
-            const videoUrl = short.video_url ?? short.videoUrl ?? short.url;
+            const rawUrl = short.video_url ?? short.videoUrl ?? short.url;
+            const videoUrl = typeof rawUrl === "string" && /^https:\/\//i.test(rawUrl) ? rawUrl : undefined;
             return <li key={videoUrl ?? index} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3">
               <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{short.title ?? `AI clip ${index + 1}`}</p>{short.duration != null && <p className="text-xs text-mute">{Math.round(short.duration)} seconds</p>}</div>
               {videoUrl && <a href={videoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm hover:border-ember"><Download className="h-4 w-4" /> Open / download</a>}
