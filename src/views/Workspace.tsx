@@ -12,6 +12,8 @@ import { ExportPanel } from "../components/ExportPanel";
 import { Badge, Button, ErrorBanner, Panel, Spinner } from "../components/ui";
 
 const MIN_CLIP = 0.5;
+const PRESET_RATIO: Record<string, string | null> = { vertical: "9 / 16", square: "1 / 1", landscape: "16 / 9", original: null };
+const PRESET_LABEL: Record<string, string> = { vertical: "9:16", square: "1:1", landscape: "16:9", original: "Original" };
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 export function Workspace({ projectId, onBack }: { projectId: string; onBack: () => void }) {
@@ -19,6 +21,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const project = projects.find((p) => p.id === projectId);
   const source = project?.source ?? null;
   const duration = source?.duration ?? 0;
+  const frameRatio = project ? PRESET_RATIO[project.preset] : null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
@@ -302,21 +305,36 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                     </p>
                   </div>
                 ) : (
-                  <video
-                    ref={videoRef}
-                    src={sourceUrl ?? undefined}
-                    className="h-full w-full object-contain"
-                    preload="metadata"
-                    playsInline
-                    onPlay={() => setPlaying(true)}
-                    onPause={() => {
-                      setPlaying(false);
-                      if (videoRef.current) setPlayhead(videoRef.current.currentTime);
-                    }}
-                    onSeeked={() => videoRef.current && setPlayhead(videoRef.current.currentTime)}
-                    onError={() => setPreviewFailed(true)}
-                    aria-label="Video preview"
-                  />
+                  // Show exactly what will be exported: the preset's frame, cropped at the chosen position.
+                  // object-fit: cover + object-position matches the export's crop window.
+                  <div
+                    className="relative h-full overflow-hidden"
+                    style={frameRatio ? { aspectRatio: frameRatio } : { width: "100%" }}
+                    data-testid="framing-preview"
+                    data-preset={project.preset}
+                  >
+                    <video
+                      ref={videoRef}
+                      src={sourceUrl ?? undefined}
+                      className={`h-full w-full ${frameRatio ? "object-cover" : "object-contain"}`}
+                      style={frameRatio ? { objectPosition: `${project.pan * 100}% ${project.pan * 100}%` } : undefined}
+                      preload="metadata"
+                      playsInline
+                      onPlay={() => setPlaying(true)}
+                      onPause={() => {
+                        setPlaying(false);
+                        if (videoRef.current) setPlayhead(videoRef.current.currentTime);
+                      }}
+                      onSeeked={() => videoRef.current && setPlayhead(videoRef.current.currentTime)}
+                      onError={() => setPreviewFailed(true)}
+                      aria-label="Video preview"
+                    />
+                    {frameRatio && (
+                      <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white/80">
+                        {PRESET_LABEL[project.preset]} framing
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-3 border-t border-line px-4 py-2.5">
