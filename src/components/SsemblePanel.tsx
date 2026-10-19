@@ -70,7 +70,7 @@ export function SsemblePanel() {
 
   const shorts = job?.result?.shorts ?? job?.result?.clips ?? [];
   return (
-    <Panel className="space-y-4 p-5">
+    <Panel id="ssemble-ai-clipping" className="space-y-4 p-5">
       <div className="flex items-start gap-3">
         <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-ember" aria-hidden />
         <div>
