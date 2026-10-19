@@ -110,7 +110,7 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
               </div>
               <p className="text-sm text-mute">YouTube lets Clipforge embed and preview this video, but it does not provide the editable video file to this browser app. To trim, crop, add captions, and export clips, select the original video file you own or have permission to edit.</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={start} busy={busy}><Scissors className="h-4 w-4" /> Edit this video</Button>
+                <Button variant="primary" onClick={() => document.getElementById("ssemble-ai-clipping")?.scrollIntoView({ behavior: "smooth", block: "start" })}><Sparkles className="h-4 w-4" /> Generate AI clips below</Button>
                 <Button onClick={() => { setYoutubeId(null); setYoutubeUrl(""); setYoutubeError(null); }}>Clear link</Button>
               </div>
             </div>
