@@ -69,6 +69,7 @@ async function getFile(key: string): Promise<File> {
 export async function videoSrc(path: string): Promise<string> {
   if (isDesktop()) return (await import("@tauri-apps/api/core")).convertFileSrc(path);
   if (objectUrls.has(path)) return objectUrls.get(path)!;
+  if (previewStates.get(path)?.status === "pending") throw new Error("preview-pending");
   const preview = await getBlob(`${path}:preview`).catch(() => null);
   const url = URL.createObjectURL(preview ?? (await getFile(path)));
   objectUrls.set(path, url);
@@ -82,10 +83,11 @@ function browserPickVideo(): Promise<string | null> {
       const file = input.files?.[0];
       if (!file) return resolve(null);
       const key = `video:${crypto.randomUUID()}`;
-      try {
-        await storeFile(key, file); browserFiles.set(key, file);
-        resolve(key);
-      } catch { resolve(null); }
+      // Keep the File in memory and return immediately. Copying a multi-GB video into
+      // IndexedDB can take a long time, so persist it in the background (only needed after a reload).
+      browserFiles.set(key, file);
+      storeFile(key, file).catch(() => undefined);
+      resolve(key);
     };
     input.click();
   });
@@ -102,22 +104,59 @@ function nativeMetadata(file: File): Promise<{ duration: number; width: number; 
     video.src = url;
   });
 }
+export type PreviewState = { status: "pending"; fraction: number } | { status: "ready" } | { status: "failed"; error: string };
+const previewStates = new Map<string, PreviewState>();
+const previewSubs = new Map<string, Set<(s: PreviewState) => void>>();
+const infoCache = new Map<string, VideoInfo>();
+export const getPreviewState = (path: string) => previewStates.get(path);
+export function onPreviewState(path: string, cb: (s: PreviewState) => void): () => void {
+  if (!previewSubs.has(path)) previewSubs.set(path, new Set());
+  previewSubs.get(path)!.add(cb);
+  return () => { previewSubs.get(path)?.delete(cb); };
+}
+function setPreviewState(path: string, st: PreviewState) {
+  previewStates.set(path, st);
+  previewSubs.get(path)?.forEach((cb) => cb(st));
+}
+/** Build the small preview copy in the background; the editor is usable (time fields, export) meanwhile. */
+const MAX_AUTO_PREVIEW_SECONDS = 15 * 60;
+async function ensurePreview(file: File, path: string, duration: number) {
+  if (previewStates.get(path)?.status === "pending" || previewStates.get(path)?.status === "ready") return;
+  if (await getBlob(`${path}:preview`).catch(() => null)) { setPreviewState(path, { status: "ready" }); return; }
+  if (duration > MAX_AUTO_PREVIEW_SECONDS) {
+    // Building a preview of a long video would keep the single video engine busy for minutes and block exports.
+    setPreviewState(path, { status: "failed", error: "Preview skipped for long videos." });
+    return;
+  }
+  setPreviewState(path, { status: "pending", fraction: 0 });
+  try {
+    const preview = await makePreview(file, (f) => setPreviewState(path, { status: "pending", fraction: f }));
+    await storeBlob(`${path}:preview`, preview).catch(() => undefined);
+    // videoSrc() prefers a stored preview; keep an in-memory URL too in case storage is unavailable.
+    objectUrls.set(path, URL.createObjectURL(preview));
+    setPreviewState(path, { status: "ready" });
+  } catch (e) {
+    setPreviewState(path, { status: "failed", error: e instanceof Error ? e.message : "Could not prepare a preview." });
+  }
+}
 async function metadata(file: File, path: string): Promise<VideoInfo> {
+  const cached = infoCache.get(path);
+  if (cached) return cached;
   const native = await nativeMetadata(file);
   if (native) {
-    return { path, file_name: file.name, duration: native.duration, width: native.width, height: native.height, fps: 30, has_audio: true, video_codec: "browser-decoded", size_bytes: file.size };
+    const info: VideoInfo = { path, file_name: file.name, duration: native.duration, width: native.width, height: native.height, fps: 30, has_audio: true, video_codec: "browser-decoded", size_bytes: file.size };
+    infoCache.set(path, info);
+    return info;
   }
-  // The browser can't play this format (e.g. MKV/AVI): read it with ffmpeg and make a small preview copy.
+  // The browser can't play this format (e.g. MKV/AVI): read it with ffmpeg (fast) and
+  // build the preview copy in the background instead of making the user wait for it.
   try {
-    say("Starting the video engine (first time only)…");
-    const info = await probe(file);
-    // The workspace re-probes on open; don't rebuild a preview we already made.
-    if (!(await getBlob(`${path}:preview`).catch(() => null))) {
-      say("Preparing a preview… 0%");
-      const preview = await makePreview(file, (f) => say(`Preparing a preview… ${Math.round(f * 100)}%`));
-      await storeBlob(`${path}:preview`, preview);
-    }
-    return { path, file_name: file.name, duration: info.duration, width: info.width, height: info.height, fps: info.fps, has_audio: info.hasAudio, video_codec: info.videoCodec, size_bytes: file.size };
+    say("Reading the video…");
+    const p = await probe(file);
+    const info: VideoInfo = { path, file_name: file.name, duration: p.duration, width: p.width, height: p.height, fps: p.fps, has_audio: p.hasAudio, video_codec: p.videoCodec, size_bytes: file.size };
+    infoCache.set(path, info);
+    void ensurePreview(file, path, p.duration);
+    return info;
   } catch (e) {
     if (e instanceof EngineLoadError) throw new Error("This format can't be read by your browser and the built-in video engine could not start. Try Chrome or Edge, or convert the file to MP4.");
     throw e;

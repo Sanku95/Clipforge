@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { videoSrc } from "../lib/api";
+import { getPreviewState, onPreviewState, videoSrc, type PreviewState } from "../lib/api";
 import { ArrowLeft, FilePlus2, Film, Pause, Play, PlayCircle, RefreshCw, Save } from "lucide-react";
 import { api, pickVideo } from "../lib/api";
 import { newId, projectStatus, useProjects } from "../lib/projects";
@@ -28,6 +28,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const [outPoint, setOutPoint] = useState(Math.min(duration, 30));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [preview, setPreview] = useState<PreviewState | undefined>(undefined);
   const [checking, setChecking] = useState(true);
   const [sourceMissing, setSourceMissing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,9 +38,23 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   useEffect(() => {
     let cancelled = false;
     setSourceUrl(null);
+    setPreviewFailed(false);
     if (!source) return;
-    videoSrc(source.path).then((url) => { if (!cancelled) setSourceUrl(url); }).catch(() => { if (!cancelled) setPreviewFailed(true); });
-    return () => { cancelled = true; };
+    const path = source.path;
+    const load = () =>
+      videoSrc(path)
+        .then((url) => { if (!cancelled) { setPreviewFailed(false); setSourceUrl(url); } })
+        .catch((e) => { if (!cancelled && !(e instanceof Error && e.message === "preview-pending")) setPreviewFailed(true); });
+    setPreview(getPreviewState(path));
+    void load();
+    // Formats the browser can't play get a small preview copy built in the background.
+    const off = onPreviewState(path, (st) => {
+      if (cancelled) return;
+      setPreview(st);
+      if (st.status === "ready") void load();
+      if (st.status === "failed") setPreviewFailed(true);
+    });
+    return () => { cancelled = true; off(); };
   }, [source?.path]);
 
   // Confirm the file is still there (this also re-enables preview access).
@@ -273,6 +288,11 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                   <Spinner label="Checking video…" />
                 ) : sourceMissing ? (
                   <div className="text-sm text-mute">Video unavailable</div>
+                ) : preview?.status === "pending" ? (
+                  <div className="max-w-sm px-6 text-center text-sm text-mute" role="status" aria-live="polite">
+                    <Spinner label={`Preparing a preview… ${Math.round(preview.fraction * 100)}%`} />
+                    <p className="mt-2">You can already set in and out points and export. Playback appears when this finishes.</p>
+                  </div>
                 ) : previewFailed ? (
                   <div className="max-w-sm px-6 text-center text-sm text-mute">
                     <Film className="mx-auto mb-2 h-8 w-8 text-ember" aria-hidden />
@@ -300,7 +320,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                 )}
               </div>
               <div className="flex items-center gap-3 border-t border-line px-4 py-2.5">
-                <Button onClick={togglePlay} disabled={previewFailed || sourceMissing} aria-label={playing ? "Pause" : "Play"}>
+                <Button onClick={togglePlay} disabled={previewFailed || sourceMissing || preview?.status === "pending"} aria-label={playing ? "Pause" : "Play"}>
                   {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
                 <Button onClick={playSelection} disabled={previewFailed || sourceMissing || !!draftError}>
