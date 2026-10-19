@@ -4,7 +4,7 @@ type Item = { title: string; status: "Available" | "Planned"; body: string };
 
 const ITEMS: Item[] = [
   { title: "Import, preview and trim", status: "Available", body: "Import local videos, preview them, set precise in/out points and cut multiple clips from one source." },
-  { title: "Social export presets", status: "Available", body: "9:16, 1:1, 16:9 or original framing, with an adjustable fixed crop. Exports are re-encoded with the bundled FFmpeg and verified." },
+  { title: "Social export presets", status: "Available", body: "9:16, 1:1, 16:9 or original framing, with an adjustable fixed crop. Exports are re-encoded with FFmpeg (bundled in the Mac app; running as WebAssembly on the website) and verified. Websites export MP4 and read MKV/AVI too." },
   { title: "Local transcription", status: "Planned", body: "Speech-to-text running on your Mac with a Whisper model. It will need a one-time model download (roughly 150 MB to 1.5 GB depending on the size you pick). Not included yet." },
   { title: "AI highlight suggestions", status: "Planned", body: "Rank transcript moments (strong statements, questions, topic changes) and propose clip ranges you can adjust. This depends on transcription, so it comes after it. Not included yet." },
   { title: "Captions", status: "Planned", body: "Editable captions with font size and placement, burned in or exported as .srt. Not included yet." },
@@ -33,8 +33,8 @@ export function Roadmap() {
       </ul>
       <Panel className="p-4 text-[13px] text-mute">
         <h2 className="mb-1 text-[14px] font-medium text-ink">Privacy</h2>
-        ClipForge processes videos on this Mac only. It has no accounts, no analytics and no network features. Project data is a small
-        JSON file in the app's data folder.
+        ClipForge processes videos on this device only. It has no accounts and no analytics, and your videos are never uploaded. On the website, project
+        data is stored in your browser; in the Mac app it is a small JSON file in the app's data folder.
       </Panel>
     </div>
   );

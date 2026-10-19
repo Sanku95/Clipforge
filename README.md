@@ -3,6 +3,17 @@
 A local-first macOS app for cutting long videos into short clips for Shorts, Reels and TikTok.
 Everything runs on your Mac: no accounts, no uploads, no telemetry.
 
+## Website version
+
+The same editor runs in the browser: **https://sanku95.github.io/Clipforge/** (deployed from the `browser-local` branch by GitHub Actions).
+
+- Your video stays on your device. Nothing is uploaded; there is no server.
+- Media work uses **ffmpeg.wasm** (single-threaded, bundled with the site, so no special hosting headers are needed).
+- Imports MP4/MOV/WebM, and also MKV/AVI: formats the browser cannot play are read with FFmpeg and a small 360p preview copy is made for the editor (this takes roughly 0.4x real time, e.g. about 75 s for a 3-minute 1080p file).
+- Exports are real **H.264/AAC MP4** files that are re-opened and checked. Expect about 0.8x real time for 1080p sources.
+- Limits: very large files are bounded by browser memory; preview playback needs a browser that can play H.264 (Chrome, Edge, Safari, Firefox on most systems).
+- Not built yet in either version: transcription, AI highlights, captions, face-aware framing.
+
 ## What works today
 
 | Feature | Status |

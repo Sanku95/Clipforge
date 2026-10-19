@@ -36,7 +36,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
         })}
       </ul>
       <div className="mt-auto px-2 text-[11px] leading-relaxed text-mute">
-        Everything runs on this Mac.
+        Everything runs on this device.
         <br />
         No uploads, no telemetry.
       </div>

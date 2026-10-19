@@ -140,7 +140,7 @@ export function ExportPanel({ project, sourceMissing, onChange }: Props) {
             <FolderOpen className="h-4 w-4" /> Choose
           </Button>}
         </div>
-        <p className="mt-1 text-[11px] text-mute">Your original video is never modified. Browser exports download as WebM files.</p>
+        <p className="mt-1 text-[11px] text-mute">Your original video is never modified. In the browser, clips are encoded on your device and download as MP4 files.</p>
       </div>
 
       <div className="mt-4 flex gap-2">

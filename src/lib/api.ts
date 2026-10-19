@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { ClipOutcome, ExportProgress, Preset, Project, VideoInfo } from "./types";
+import { EngineLoadError, cancelWasm, exportClipsWasm, makePreview, probe } from "./wasm";
 
 export const isDesktop = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -20,6 +21,8 @@ const STORE = "videos";
 const browserFiles = new Map<string, File>();
 const objectUrls = new Map<string, string>();
 let progressListeners: ((p: ExportProgress) => void)[] = [];
+let prepareListeners: ((msg: string | null) => void)[] = [];
+const say = (msg: string | null) => prepareListeners.forEach((cb) => cb(msg));
 function db(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -37,6 +40,23 @@ async function storeFile(key: string, file: File) {
     tx.onerror = () => reject(tx.error);
   });
 }
+async function getBlob(key: string): Promise<Blob | null> {
+  const d = await db();
+  return await new Promise<Blob | null>((resolve, reject) => {
+    const req = d.transaction(STORE).objectStore(STORE).get(key);
+    req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function storeBlob(key: string, blob: Blob) {
+  const d = await db();
+  await new Promise<void>((resolve, reject) => {
+    const tx = d.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(blob, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
 async function getFile(key: string): Promise<File> {
   if (browserFiles.has(key)) return browserFiles.get(key)!;
   const d = await db();
@@ -49,14 +69,15 @@ async function getFile(key: string): Promise<File> {
 export async function videoSrc(path: string): Promise<string> {
   if (isDesktop()) return (await import("@tauri-apps/api/core")).convertFileSrc(path);
   if (objectUrls.has(path)) return objectUrls.get(path)!;
-  const url = URL.createObjectURL(await getFile(path));
+  const preview = await getBlob(`${path}:preview`).catch(() => null);
+  const url = URL.createObjectURL(preview ?? (await getFile(path)));
   objectUrls.set(path, url);
   return url;
 }
 function browserPickVideo(): Promise<string | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
-    input.type = "file"; input.accept = "video/*";
+    input.type = "file"; input.accept = "video/*,.mkv,.avi,.mov,.m4v,.webm,.mp4";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
@@ -69,16 +90,67 @@ function browserPickVideo(): Promise<string | null> {
     input.click();
   });
 }
-function metadata(file: File, path: string): Promise<VideoInfo> {
-  return new Promise((resolve, reject) => {
+function nativeMetadata(file: File): Promise<{ duration: number; width: number; height: number } | null> {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
-    video.preload = "metadata"; video.src = url;
-    video.onloadedmetadata = () => {
-      const info: VideoInfo = { path, file_name: file.name, duration: video.duration, width: video.videoWidth, height: video.videoHeight, fps: 30, has_audio: true, video_codec: "browser-decoded", size_bytes: file.size };
-      URL.revokeObjectURL(url); resolve(info);
-    };
-    video.onerror = () => { URL.revokeObjectURL(url); reject(new Error("This video format cannot be read by your browser. Try MP4 (H.264).")); };
+    const done = (v: { duration: number; width: number; height: number } | null) => { clearTimeout(t); URL.revokeObjectURL(url); video.removeAttribute("src"); resolve(v); };
+    const t = setTimeout(() => done(null), 6000);
+    video.preload = "metadata"; video.muted = true;
+    video.onloadedmetadata = () => done(video.videoWidth > 0 && isFinite(video.duration) ? { duration: video.duration, width: video.videoWidth, height: video.videoHeight } : null);
+    video.onerror = () => done(null);
+    video.src = url;
+  });
+}
+async function metadata(file: File, path: string): Promise<VideoInfo> {
+  const native = await nativeMetadata(file);
+  if (native) {
+    return { path, file_name: file.name, duration: native.duration, width: native.width, height: native.height, fps: 30, has_audio: true, video_codec: "browser-decoded", size_bytes: file.size };
+  }
+  // The browser can't play this format (e.g. MKV/AVI): read it with ffmpeg and make a small preview copy.
+  try {
+    say("Starting the video engine (first time only)…");
+    const info = await probe(file);
+    // The workspace re-probes on open; don't rebuild a preview we already made.
+    if (!(await getBlob(`${path}:preview`).catch(() => null))) {
+      say("Preparing a preview… 0%");
+      const preview = await makePreview(file, (f) => say(`Preparing a preview… ${Math.round(f * 100)}%`));
+      await storeBlob(`${path}:preview`, preview);
+    }
+    return { path, file_name: file.name, duration: info.duration, width: info.width, height: info.height, fps: info.fps, has_audio: info.hasAudio, video_codec: info.videoCodec, size_bytes: file.size };
+  } catch (e) {
+    if (e instanceof EngineLoadError) throw new Error("This format can't be read by your browser and the built-in video engine could not start. Try Chrome or Edge, or convert the file to MP4.");
+    throw e;
+  } finally {
+    say(null);
+  }
+}
+function verifyBlob(blob: Blob): Promise<{ duration: number; width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    const finish = (fn: () => void) => { URL.revokeObjectURL(url); fn(); };
+    const t = setTimeout(() => finish(() => reject(new Error("The exported file could not be opened to verify it."))), 15000);
+    v.preload = "metadata"; v.muted = true;
+    v.onloadedmetadata = () => { clearTimeout(t); finish(() => resolve({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })); };
+    v.onerror = () => { clearTimeout(t); finish(() => reject(new Error("The exported file could not be opened to verify it."))); };
+    v.src = url;
+  });
+}
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob); const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+async function wasmBrowserExport(job: {source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[]}): Promise<ClipOutcome[]> {
+  const file = await getFile(job.source);
+  const results = await exportClipsWasm(
+    file, job.preset, job.pan, job.clips,
+    (clip_id, index, fraction) => progressListeners.forEach((cb) => cb({ clip_id, index, total: job.clips.length, fraction })),
+    verifyBlob
+  );
+  return results.map((r) => {
+    if (r.ok && r.blob && r.filename) download(r.blob, r.filename);
+    return { clip_id: r.clipId, ok: r.ok, output_path: r.filename, error: r.error, duration: r.duration, width: r.width, height: r.height, size_bytes: r.blob?.size ?? null };
   });
 }
 async function browserExport(job: {source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[]}): Promise<ClipOutcome[]> {
@@ -119,15 +191,20 @@ async function browserExport(job: {source:string;out_dir:string;preset:Preset;pa
   return outcomes;
 }
 
+export function onPrepareStatus(cb: (msg: string | null) => void): () => void {
+  prepareListeners.push(cb);
+  return () => { prepareListeners = prepareListeners.filter((x) => x !== cb); };
+}
+
 export const api = {
-  checkTools: () => isDesktop() ? call<{ffmpeg:string;ffprobe:string}>("check_tools") : Promise.resolve({ffmpeg:"Browser MediaRecorder",ffprobe:"HTML video decoder"}),
+  checkTools: () => isDesktop() ? call<{ffmpeg:string;ffprobe:string}>("check_tools") : Promise.resolve({ffmpeg:"ffmpeg.wasm (in your browser)",ffprobe:"ffmpeg.wasm (in your browser)"}),
   probeVideo: async (path:string) => isDesktop() ? call<VideoInfo>("probe_video",{path}) : metadata(await getFile(path),path),
   loadProjects: () => isDesktop() ? call<Project[]>("load_projects") : Promise.resolve(JSON.parse(localStorage.getItem("clipforge.projects") || "[]") as Project[]),
   saveProjects: (projects:Project[]) => isDesktop() ? call<void>("save_projects",{projects}) : Promise.resolve().then(()=>localStorage.setItem("clipforge.projects",JSON.stringify(projects))),
   defaultOutputDir: () => isDesktop() ? call<string>("default_output_dir") : Promise.resolve("Downloads (browser-managed)"),
   revealInFinder: (path:string) => isDesktop() ? call<void>("reveal_in_finder",{path}) : Promise.resolve(),
-  cancelExport: () => isDesktop() ? call<void>("cancel_export") : Promise.resolve(),
-  exportClips: (job:{source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[]}) => isDesktop() ? call<ClipOutcome[]>("export_clips",{job}) : browserExport(job),
+  cancelExport: () => isDesktop() ? call<void>("cancel_export") : Promise.resolve(cancelWasm()),
+  exportClips: (job:{source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[]}) => isDesktop() ? call<ClipOutcome[]>("export_clips",{job}) : wasmBrowserExport(job).catch((e) => { if (e instanceof EngineLoadError) return browserExport(job); throw e; }),
   onExportProgress: (cb:(p:ExportProgress)=>void):Promise<UnlistenFn> => isDesktop() ? listen<ExportProgress>("export-progress",e=>cb(e.payload)) : Promise.resolve((()=>{progressListeners.push(cb);return()=>{progressListeners=progressListeners.filter(x=>x!==cb)}})())
 };
 const VIDEO_EXTENSIONS=["mp4","mov","m4v","mkv","webm","avi"];
