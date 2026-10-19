@@ -15,6 +15,9 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
   const { projects, loading, loadError, saveError } = useProjects();
   const { importVideo, busy, error, clearError } = useImport();
   const [elapsed, setElapsed] = useState(0);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeId, setYoutubeId] = useState<string | null>(null);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!busy) {
@@ -28,6 +31,28 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
   const start = async () => {
     const p = await importVideo();
     if (p) onOpen(p.id);
+  };
+
+  const loadYoutubeLink = () => {
+    setYoutubeError(null);
+    setYoutubeId(null);
+    try {
+      const url = new URL(youtubeUrl.trim());
+      const host = url.hostname.replace(/^www\\./, "").toLowerCase();
+      let id: string | null = null;
+      if (host === "youtu.be") id = url.pathname.split("/").filter(Boolean)[0] ?? null;
+      if (host === "youtube.com" || host === "m.youtube.com" || host === "youtube-nocookie.com") {
+        if (url.pathname === "/watch") id = url.searchParams.get("v");
+        else if (/^\\/(embed|shorts|live)\\//.test(url.pathname)) id = url.pathname.split("/")[2] ?? null;
+      }
+      if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) {
+        setYoutubeError("Enter a valid YouTube video link.");
+        return;
+      }
+      setYoutubeId(id);
+    } catch {
+      setYoutubeError("Paste a full YouTube link, such as https://www.youtube.com/watch?v=...");
+    }
   };
 
   const clipCount = projects.reduce((n, p) => n + p.clips.length, 0);
@@ -52,6 +77,44 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
         {loadError && <ErrorBanner>Could not load your projects: {loadError}</ErrorBanner>}
         {saveError && <ErrorBanner>Could not save your projects: {saveError}</ErrorBanner>}
 
+        <Panel className="space-y-4 p-5">
+          <div>
+            <h2 className="text-base font-semibold">Start from a YouTube link</h2>
+            <p className="mt-1 text-sm text-mute">Preview a video here, then use a video file you own or have permission to edit to create clips.</p>
+          </div>
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); loadYoutubeLink(); }}>
+            <input
+              type="url"
+              value={youtubeUrl}
+              onChange={(event) => setYoutubeUrl(event.target.value)}
+              placeholder="Paste YouTube video URL"
+              aria-label="YouTube video URL"
+              className="min-w-0 flex-1 rounded-lg border border-line bg-panel px-3 py-2.5 text-sm outline-none focus:border-ember"
+            />
+            <Button type="submit" variant="primary">Load video</Button>
+          </form>
+          {youtubeError && <p role="alert" className="text-sm text-red-400">{youtubeError}</p>}
+          {youtubeId && (
+            <div className="space-y-3">
+              <div className="aspect-video max-w-3xl overflow-hidden rounded-xl border border-line bg-black">
+                <iframe
+                  title="YouTube video preview"
+                  src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+              <p className="text-sm text-mute">Link preview loaded. Directly turning a YouTube URL into downloadable clips is not enabled yet. To edit now, choose <strong>Import video</strong> and select your authorized source file.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" onClick={start} busy={busy}><FilePlus2 className="h-4 w-4" /> Import source file</Button>
+                <Button onClick={() => { setYoutubeId(null); setYoutubeUrl(""); setYoutubeError(null); }}>Clear link</Button>
+              </div>
+            </div>
+          )}
+        </Panel>
+
         <div className="grid grid-cols-3 gap-4">
           <Stat label="Projects" value={projects.length} />
           <Stat label="Clips marked" value={clipCount} />
@@ -73,7 +136,7 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
             <EmptyState
               icon={<Clapperboard className="h-9 w-9" />}
               title="No projects yet"
-              body="Import a video from your Mac to create your first project. Your video stays where it is; ClipForge only reads it."
+              body="Import a video file to create your first project. Your video stays on your device; ClipForge only reads it."
               action={
                 <Button variant="primary" onClick={start} busy={busy}>
                   <FilePlus2 className="h-4 w-4" /> Import video
