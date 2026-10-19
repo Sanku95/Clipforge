@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Clapperboard, FilePlus2, Scissors, Sparkles } from "lucide-react";
+import { SsemblePanel } from "../components/SsemblePanel";
 import { projectStatus, useProjects } from "../lib/projects";
 import { useImport } from "../lib/useImport";
 import { formatDuration } from "../lib/time";
