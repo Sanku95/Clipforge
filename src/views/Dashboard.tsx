@@ -14,16 +14,13 @@ interface Props {
 export function Dashboard({ onOpen, onNavigate }: Props) {
   const { projects, loading, loadError, saveError } = useProjects();
   const { importVideo, busy, error, clearError } = useImport();
-  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     if (!busy) {
-      setStartedAt(null);
       setElapsed(0);
       return;
     }
-    setStartedAt(Date.now());
     const timer = window.setInterval(() => setElapsed((n) => n + 1), 1000);
     return () => window.clearInterval(timer);
   }, [busy]);
