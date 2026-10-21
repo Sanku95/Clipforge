@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CAPTION_PRESETS, applyPreset, buildAss, defaultStyle, fontFor, groupWords, linesForClip, outputSize, toSrt,
+  CAPTION_PRESETS, FONT_CELL, applyPreset, buildAss, defaultStyle, fontFor, fontSizePx, groupWords, linesForClip, outputSize, toSrt,
   type CaptionLine, type CaptionWord
 } from "./captions";
 
@@ -81,6 +81,14 @@ describe("buildAss", () => {
     expect(fontFor("pop", "hello")).toBe("anton");
     expect(buildAss([{ id: "4", start: 0, end: 1, text: "नमस्ते" }], defaultStyle("pop"), 606, 1080)).toContain(",devanagari,,");
   });
+  it("ASS font size is the em size times the font's cell ratio, so export matches the CSS preview", () => {
+    const fs = fontSizePx(defaultStyle("pop"), 606, 1080);
+    const ass = buildAss(lines, defaultStyle("pop"), 606, 1080);
+    const size = (k: string) => Number(ass.match(new RegExp(`^Style: ${k},[^,]+,([\\d.]+),`, "m"))![1]);
+    expect(size("anton")).toBeCloseTo(fs * FONT_CELL.anton, 1);
+    expect(size("poppins")).toBeCloseTo(fs * FONT_CELL.poppins, 1);
+    expect(FONT_CELL.anton).toBeGreaterThan(1.5);
+  });
   it("every preset produces a well-formed file", () => {
     for (const p of CAPTION_PRESETS) {
       const ass = buildAss(lines, defaultStyle(p.id), 1080, 1080);
@@ -114,5 +122,26 @@ describe("groupWords", () => {
   it("ignores empty tokens and keeps punctuation tight", () => {
     const lines = groupWords(words([["Hello", 0, 0.4], [" ", 0.4, 0.5], [",", 0.5, 0.6], ["world", 0.6, 1]]));
     expect(lines[0].text).toBe("Hello, world");
+  });
+});
+
+import { parseSrt } from "./captions";
+describe("parseSrt", () => {
+  it("parses standard SRT incl. BOM, CRLF and tags; round-trips with toSrt", () => {
+    const src = "﻿1\r\n00:00:01,000 --> 00:00:02,500\r\n<i>Hello</i> there\r\n\r\n2\r\n00:00:03,000 --> 00:00:04,250\r\nSecond\r\nline\r\n";
+    const lines = parseSrt(src);
+    expect(lines.map((l) => [l.start, l.end, l.text])).toEqual([[1, 2.5, "Hello there"], [3, 4.25, "Second line"]]);
+    expect(parseSrt(toSrt(lines)).map((l) => [l.start, l.end, l.text])).toEqual(lines.map((l) => [l.start, l.end, l.text]));
+  });
+  it("handles missing index numbers, dot decimals and short millisecond fields", () => {
+    expect(parseSrt("00:00:01.5 --> 00:00:02.0\nHi").map((l) => [l.start, l.end])).toEqual([[1.5, 2]]);
+  });
+  it("skips garbage, empty text and reversed times; sorts by start", () => {
+    const lines = parseSrt("junk\n\n2\n00:00:05,000 --> 00:00:06,000\nB\n\n1\n00:00:01,000 --> 00:00:02,000\nA\n\n3\n00:00:07,000 --> 00:00:06,000\nbad\n\n4\n00:00:08,000 --> 00:00:09,000\n\n");
+    expect(lines.map((l) => l.text)).toEqual(["A", "B"]);
+    expect(parseSrt("")).toEqual([]);
+  });
+  it("keeps Hindi text intact", () => {
+    expect(parseSrt("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते दुनिया\n")[0].text).toBe("नमस्ते दुनिया");
   });
 });

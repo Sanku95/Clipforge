@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getPreviewState, onPreviewState, videoSrc, prepareSegmentPreview, type PreviewState } from "../lib/api";
 import { ArrowLeft, FilePlus2, Film, Pause, Play, PlayCircle, RefreshCw, Save } from "lucide-react";
 import { api, pickVideo } from "../lib/api";
@@ -9,6 +9,9 @@ import { Timeline } from "../components/Timeline";
 import { TimeInput } from "../components/TimeInput";
 import { ClipList } from "../components/ClipList";
 import { ExportPanel } from "../components/ExportPanel";
+import { CaptionsPanel } from "../components/CaptionsPanel";
+import { CaptionOverlay } from "../components/CaptionOverlay";
+import { defaultStyle } from "../lib/captions";
 import { Badge, Button, ErrorBanner, Panel, Spinner } from "../components/ui";
 
 const MIN_CLIP = 0.5;
@@ -23,6 +26,11 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
   const source = project?.source ?? null;
   const duration = source?.duration ?? 0;
   const frameRatio = project ? PRESET_RATIO[project.preset] : null;
+  // The preview box has the exact shape of the export, so captions drawn over it line up with the final frame.
+  const srcRatio = source && source.width > 0 && source.height > 0 ? source.width / source.height : 16 / 9;
+  const frameStyle: CSSProperties = frameRatio
+    ? { aspectRatio: frameRatio }
+    : { aspectRatio: String(srcRatio), maxWidth: "100%", maxHeight: "100%", ...(srcRatio >= 16 / 9 ? { width: "100%", height: "auto" } : { height: "100%", width: "auto" }) };
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const stopAt = useRef<number | null>(null);
@@ -329,7 +337,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                   // object-fit: cover + object-position matches the export's crop window.
                   <div
                     className="relative h-full overflow-hidden"
-                    style={frameRatio ? { aspectRatio: frameRatio } : { width: "100%" }}
+                    style={frameStyle}
                     data-testid="framing-preview"
                     data-preset={project.preset}
                   >
@@ -349,6 +357,16 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                       onError={() => setPreviewFailed(true)}
                       aria-label="Video preview"
                     />
+                    {source && (project.captions?.length ?? 0) > 0 && (
+                      <CaptionOverlay
+                        lines={project.captions ?? []}
+                        style={project.captionStyle ?? defaultStyle("pop")}
+                        time={playhead}
+                        preset={project.preset}
+                        srcWidth={source.width}
+                        srcHeight={source.height}
+                      />
+                    )}
                     {frameRatio && (
                       <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white/80">
                         {PRESET_LABEL[project.preset]} framing
@@ -428,6 +446,12 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                 update(project.id, (p) => ({ ...p, clips: p.clips.filter((c) => c.id !== id) }));
                 if (selectedId === id) setSelectedId(null);
               }}
+            />
+            <CaptionsPanel
+              project={project}
+              range={{ start: inPoint, end: outPoint }}
+              onChange={(patch) => update(project.id, patch)}
+              onSeek={seek}
             />
             <ExportPanel
               project={project}

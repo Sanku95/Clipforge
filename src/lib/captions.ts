@@ -28,6 +28,12 @@ export const FONT_FAMILY: Record<FontKey, string> = {
   devanagari: "Noto Sans Devanagari ExtraBold"
 };
 
+/**
+ * libass (like Windows GDI) treats "font size" as the whole line height (winAscent+winDescent), while CSS
+ * font-size is the em. These ratios come from each bundled font's OS/2 table so that export size == preview size.
+ */
+export const FONT_CELL: Record<FontKey, number> = { poppins: 1.762, anton: 1.7334, bangers: 1.757, devanagari: 1.906 };
+
 export interface PresetDef {
   id: CaptionPresetId;
   label: string;
@@ -155,7 +161,7 @@ export function buildAss(lines: CaptionLine[], style: CaptionStyle, width: numbe
   out.push("[Script Info]", "ScriptType: v4.00+", `PlayResX: ${width}`, `PlayResY: ${height}`, "WrapStyle: 0", "ScaledBorderAndShadow: yes", "");
   out.push("[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding");
   for (const k of FONT_KEYS) {
-    out.push(`Style: ${k},${FONT_FAMILY[k]},${fmt(fs)},${sp.primary},${sp.secondary},${sp.outline},${sp.back},${sp.bold},0,0,0,100,100,0,0,${sp.borderStyle},${fmt(sp.outlineW)},${fmt(sp.shadow)},${align},${mlr},${mlr},${mv},1`);
+    out.push(`Style: ${k},${FONT_FAMILY[k]},${fmt(fs * FONT_CELL[k])},${sp.primary},${sp.secondary},${sp.outline},${sp.back},${sp.bold},0,0,0,100,100,0,0,${sp.borderStyle},${fmt(sp.outlineW)},${fmt(sp.shadow)},${align},${mlr},${mlr},${mv},1`);
   }
   out.push("", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text");
   for (const l of lines) {
@@ -172,14 +178,16 @@ export function buildAss(lines: CaptionLine[], style: CaptionStyle, width: numbe
   return out.join("\n") + "\n";
 }
 
+/** Words with timings for a line: the real ones when known, otherwise spread evenly over the line. */
+export function lineWords(l: CaptionLine): CaptionWord[] {
+  if (l.words && l.words.length) return l.words;
+  const parts = l.text.trim().split(/\s+/).filter(Boolean);
+  const per = (l.end - l.start) / Math.max(1, parts.length);
+  return parts.map((t, i) => ({ t, s: l.start + i * per, e: l.start + (i + 1) * per }));
+}
+
 function karaokeText(l: CaptionLine, style: CaptionStyle): string {
-  const words: CaptionWord[] = l.words && l.words.length
-    ? l.words
-    : (() => {
-        const parts = l.text.trim().split(/\s+/).filter(Boolean);
-        const per = (l.end - l.start) / Math.max(1, parts.length);
-        return parts.map((t, i) => ({ t, s: l.start + i * per, e: l.start + (i + 1) * per }));
-      })();
+  const words = lineWords(l);
   let cursor = l.start;
   const bits: string[] = [];
   for (const w of words) {
@@ -229,4 +237,25 @@ export function groupWords(words: CaptionWord[], opts: { maxWords?: number; maxD
   // Never let a caption overlap the next one.
   for (let i = 0; i < lines.length - 1; i++) lines[i].end = Math.min(lines[i].end, lines[i + 1].start);
   return lines;
+}
+
+// ---------- SRT import ----------
+const SRT_TIME = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/;
+const toSec = (h: string, m: string, s: string, ms: string) => Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms.padEnd(3, "0")) / 1000;
+/** Parse .srt text into caption lines (tolerates BOM, CRLF, missing index numbers, HTML-ish tags). */
+export function parseSrt(input: string): CaptionLine[] {
+  const text = input.replace(/^﻿/, "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return [];
+  const out: CaptionLine[] = [];
+  for (const block of text.split(/\n{2,}/)) {
+    const rows = block.split("\n");
+    const ti = rows.findIndex((r) => SRT_TIME.test(r));
+    if (ti < 0) continue;
+    const m = SRT_TIME.exec(rows[ti])!;
+    const start = toSec(m[1], m[2], m[3], m[4]), end = toSec(m[5], m[6], m[7], m[8]);
+    const body = rows.slice(ti + 1).join("\n").replace(/<[^>]+>/g, "").replace(/\{[^}]*\}/g, "").trim();
+    if (!body || !(end > start)) continue;
+    out.push({ id: `s${out.length + 1}-${Math.round(start * 1000)}`, start, end, text: body.replace(/\n+/g, " ") });
+  }
+  return out.sort((a, b) => a.start - b.start);
 }

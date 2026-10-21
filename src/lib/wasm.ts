@@ -4,6 +4,8 @@
  * Single-thread core => no SharedArrayBuffer / special headers needed (works on GitHub Pages).
  */
 import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { buildAss, linesForClip, outputSize, type CaptionLine, type CaptionStyle, type FontKey } from "./captions";
+import { loadFontBytes } from "./fonts";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
 
@@ -129,6 +131,31 @@ export function makePreview(file: File, onProgress?: (fraction: number) => void,
   });
 }
 
+/** 16 kHz mono float samples for speech-to-text (what Whisper expects). */
+export function extractAudio(file: File, start: number, end: number, onProgress?: (fraction: number) => void): Promise<Float32Array> {
+  return serial(async () => {
+    const ff = await engine();
+    cancelled = false;
+    const onP = ({ progress }: { progress: number }) => onProgress?.(Math.max(0, Math.min(1, progress)));
+    ff.on("progress", onP);
+    try {
+      return await withInput(ff, file, async (path) => {
+        const dur = Math.max(0.5, end - start);
+        const code = await ff.exec(["-hide_banner", "-ss", Math.max(0, start).toFixed(3), "-i", path, "-t", dur.toFixed(3), "-vn", "-map", "0:a:0", "-ac", "1", "-ar", "16000", "-f", "f32le", "-y", "audio.raw"]);
+        if (code !== 0) throw new Error("This video has no audio track to listen to.");
+        const data = (await ff.readFile("audio.raw")) as Uint8Array;
+        await ff.deleteFile("audio.raw").catch(() => undefined);
+        if (data.byteLength < 16000 * 4 * 0.2) throw new Error("The selected range has no audio.");
+        // Copy into an aligned buffer: Uint8Array offsets from wasm FS are not guaranteed 4-byte aligned.
+        const copy = new Uint8Array(data.byteLength); copy.set(data);
+        return new Float32Array(copy.buffer, 0, Math.floor(copy.byteLength / 4));
+      });
+    } finally {
+      ff.off("progress", onP);
+    }
+  });
+}
+
 export type Preset = "original" | "vertical" | "square" | "landscape";
 
 export function cropFilter(preset: Preset, pan: number): string {
@@ -157,19 +184,31 @@ export function safeName(name: string): string {
   return name.replace(/[^a-z0-9-_ ]/gi, "").trim().replace(/\s+/g, "-") || "clip";
 }
 
+export interface BurnCaptions { lines: CaptionLine[]; style: CaptionStyle; srcWidth: number; srcHeight: number }
+
+const FONT_DIR = "/fonts";
+const FONT_FILES: FontKey[] = ["poppins", "anton", "bangers", "devanagari"];
+/** libass has no system fonts in wasm, so the bundled fonts are written into FFmpeg's in-memory filesystem. */
+async function installFonts(ff: FFmpeg) {
+  await ff.createDir(FONT_DIR).catch(() => undefined);
+  for (const k of FONT_FILES) await ff.writeFile(`${FONT_DIR}/${k}.ttf`, await loadFontBytes(k));
+}
+
 export function exportClipsWasm(
   file: File,
   preset: Preset,
   pan: number,
   clips: WasmClip[],
   onProgress: (clipId: string, index: number, fraction: number) => void,
-  verify: (blob: Blob) => Promise<{ duration: number; width: number; height: number }>
+  verify: (blob: Blob) => Promise<{ duration: number; width: number; height: number }>,
+  captions?: BurnCaptions
 ): Promise<WasmResult[]> {
   return serial(async () => {
     const ff = await engine();
     cancelled = false;
     const results: WasmResult[] = [];
     const used = new Set<string>();
+    if (captions && captions.lines.length) await installFonts(ff);
     await withInput(ff, file, async (path) => {
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i];
@@ -183,9 +222,20 @@ export function exportClipsWasm(
           while (used.has(base)) base = `${safeName(clip.name)}-${n++}`;
           used.add(base);
           const out = `${base}.mp4`;
+          let vf = `${cropFilter(preset, pan)},format=yuv420p`;
+          if (captions) {
+            const lines = linesForClip(captions.lines, clip.start, clip.end);
+            if (lines.length) {
+              const { width, height } = outputSize(preset, captions.srcWidth, captions.srcHeight);
+              const assName = `cap-${i}.ass`;
+              await ff.writeFile(assName, new TextEncoder().encode(buildAss(lines, captions.style, width, height)));
+              // Captions are drawn after the crop so they sit inside the exported frame.
+              vf = `${cropFilter(preset, pan)},subtitles=filename=${assName}:fontsdir=${FONT_DIR},format=yuv420p`;
+            }
+          }
           const code = await ff.exec([
             "-hide_banner", "-ss", clip.start.toFixed(3), "-i", path, "-t", dur.toFixed(3),
-            "-vf", `${cropFilter(preset, pan)},format=yuv420p`,
+            "-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", out
           ]);

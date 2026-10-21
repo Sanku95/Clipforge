@@ -5,9 +5,8 @@ type Item = { title: string; status: "Available" | "Planned"; body: string };
 const ITEMS: Item[] = [
   { title: "Import, preview and trim", status: "Available", body: "Import local videos, preview them, set precise in/out points and cut multiple clips from one source." },
   { title: "Social export presets", status: "Available", body: "9:16, 1:1, 16:9 or original framing, with an adjustable fixed crop. Exports are re-encoded with FFmpeg (bundled in the Mac app; running as WebAssembly on the website) and verified. Websites export MP4 and read MKV/AVI too." },
-  { title: "Local transcription", status: "Planned", body: "Speech-to-text running on your Mac with a Whisper model. It will need a one-time model download (roughly 150 MB to 1.5 GB depending on the size you pick). Not included yet." },
+  { title: "Captions", status: "Available", body: "Website version: detect speech on your device (Whisper), edit the lines, pick a decorative style, preview it live and burn it into exported MP4s, or download an .srt. New: check the lines for mistakes, especially names, numbers and non-English speech. The first run downloads a 40–80 MB speech model from huggingface.co." },
   { title: "AI highlight suggestions", status: "Planned", body: "Rank transcript moments (strong statements, questions, topic changes) and propose clip ranges you can adjust. This depends on transcription, so it comes after it. Not included yet." },
-  { title: "Captions", status: "Planned", body: "Editable captions with font size and placement, burned in or exported as .srt. Not included yet." },
   { title: "Face-aware framing", status: "Planned", body: "Today's vertical crop is a fixed position you choose. Automatic subject tracking is not implemented." }
 ];
 

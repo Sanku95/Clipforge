@@ -1,3 +1,4 @@
+import type { CaptionLine, CaptionStyle } from "./captions";
 export type Preset = "original" | "vertical" | "square" | "landscape";
 
 export interface VideoInfo {
@@ -30,6 +31,11 @@ export interface Project {
   /** 0..1 crop position for vertical/square/landscape presets. */
   pan: number;
   outputDir: string | null;
+  /** Caption lines on the SOURCE timeline (seconds). */
+  captions?: CaptionLine[];
+  captionStyle?: CaptionStyle;
+  /** Burn captions into exported videos. */
+  burnCaptions?: boolean;
   lastExport: { at: string; files: number } | null;
 }
 

@@ -3,6 +3,7 @@ import { FolderOpen, Rocket, Square, Check, X } from "lucide-react";
 import { api, isDesktop, pickFolder } from "../lib/api";
 import type { ClipOutcome, ExportProgress, Preset, Project } from "../lib/types";
 import { formatBytes, formatDuration } from "../lib/time";
+import { defaultStyle } from "../lib/captions";
 import { Button, ErrorBanner, Panel, SuccessBanner } from "./ui";
 
 const PRESETS: { id: Preset; label: string; sub: string; box: string }[] = [
@@ -54,12 +55,14 @@ export function ExportPanel({ project, sourceMissing, onChange }: Props) {
       unlisten = await api.onExportProgress((p: ExportProgress) => {
         if (mounted.current) setProgress((prev) => ({ ...prev, [p.clip_id]: p.fraction }));
       });
+      const burn = (project.burnCaptions ?? true) && (project.captions?.length ?? 0) > 0 && !isDesktop();
       const results = await api.exportClips({
         source: project.source.path,
         out_dir: outDir,
         preset: project.preset,
         pan: project.pan,
-        clips: project.clips.map((c) => ({ id: c.id, name: c.name, start: c.start, end: c.end }))
+        clips: project.clips.map((c) => ({ id: c.id, name: c.name, start: c.start, end: c.end })),
+        ...(burn ? { captions: { lines: project.captions ?? [], style: project.captionStyle ?? defaultStyle("pop"), srcWidth: project.source.width, srcHeight: project.source.height } } : {})
       });
       if (!mounted.current) return;
       setOutcomes(results);
