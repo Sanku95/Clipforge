@@ -242,7 +242,7 @@ export async function prepareSegmentPreview(path: string, start: number, end: nu
   return URL.createObjectURL(blob);
 }
 
-export type TranscribeOptions = { language: string; model: "tiny" | "base" };
+export type TranscribeOptions = { language: string; model: "tiny" | "base" | "small" };
 export type TranscribeStatus = { stage: "audio" | "model" | "listening"; fraction: number | null; note?: string };
 /** Speech-to-text on this device (Whisper). The model files download once from huggingface.co and are cached by the browser. */
 export async function transcribeVideo(path: string, start: number, end: number, opts: TranscribeOptions, onStatus: (s: TranscribeStatus) => void): Promise<CaptionLine[]> {
