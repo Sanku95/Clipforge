@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clapperboard, FilePlus2, Scissors, Sparkles } from "lucide-react";
-import { SsemblePanel } from "../components/SsemblePanel";
+import { Clapperboard, FilePlus2, Scissors, Sparkles, Trash2 } from "lucide-react";
 import { projectStatus, useProjects } from "../lib/projects";
 import { useImport } from "../lib/useImport";
 import { formatDuration } from "../lib/time";
@@ -13,7 +12,8 @@ interface Props {
 }
 
 export function Dashboard({ onOpen, onNavigate }: Props) {
-  const { projects, loading, loadError, saveError } = useProjects();
+  const { projects, loading, loadError, saveError, remove } = useProjects();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const { importVideo, busy, error, clearError } = useImport();
   const [elapsed, setElapsed] = useState(0);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -110,14 +110,11 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
               </div>
               <p className="text-sm text-mute">YouTube lets Clipforge embed and preview this video, but it does not provide the editable video file to this browser app. To trim, crop, add captions, and export clips, select the original video file you own or have permission to edit.</p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => document.getElementById("ssemble-ai-clipping")?.scrollIntoView({ behavior: "smooth", block: "start" })}><Sparkles className="h-4 w-4" /> Generate AI clips below</Button>
                 <Button onClick={() => { setYoutubeId(null); setYoutubeUrl(""); setYoutubeError(null); }}>Clear link</Button>
               </div>
             </div>
           )}
         </Panel>
-
-        <div id="ssemble-ai-clipping"><SsemblePanel /></div>
 
         <div className="grid grid-cols-3 gap-4">
           <Stat label="Projects" value={projects.length} />
@@ -152,10 +149,10 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
               {recent.map((p) => {
                 const status = projectStatus(p, false);
                 return (
-                  <li key={p.id}>
+                  <li key={p.id} className="flex items-center gap-1 rounded-xl border border-line bg-panel pr-2 hover:border-[#3a3a47]">
                     <button
                       onClick={() => onOpen(p.id)}
-                      className="flex w-full items-center gap-4 rounded-xl border border-line bg-panel px-4 py-3 text-left hover:border-[#3a3a47]"
+                      className="flex min-w-0 flex-1 items-center gap-4 px-4 py-3 text-left"
                     >
                       <Scissors className="h-5 w-5 shrink-0 text-ember" aria-hidden />
                       <span className="min-w-0 flex-1">
@@ -167,6 +164,17 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
                       <span className="text-xs text-mute">{p.clips.length} clip{p.clips.length === 1 ? "" : "s"}</span>
                       <Badge tone={status === "Exported" ? "ember" : status === "Ready" ? "ok" : "neutral"}>{status}</Badge>
                     </button>
+                    {confirmId === p.id ? (
+                      <div className="flex shrink-0 items-center gap-2 text-xs">
+                        <span className="text-mute">Delete this project?</span>
+                        <Button variant="danger" onClick={() => { remove(p.id); setConfirmId(null); }}>Delete</Button>
+                        <Button onClick={() => setConfirmId(null)}>Keep</Button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmId(p.id)} aria-label={`Delete project ${p.name}`} title="Delete project" className="shrink-0 rounded p-2 text-mute hover:text-bad">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -177,8 +185,8 @@ export function Dashboard({ onOpen, onNavigate }: Props) {
         <Panel className="flex items-center gap-4 p-4">
           <Sparkles className="h-5 w-5 shrink-0 text-ember" aria-hidden />
           <div className="flex-1 text-sm">
-            <span className="font-medium">AI highlight detection and captions are planned, not included yet.</span>{" "}
-            <span className="text-mute">This version is a precise clip editor and exporter. See what's coming on the roadmap.</span>
+            <span className="font-medium">Automatic highlight detection is planned, not included yet.</span>{" "}
+            <span className="text-mute">You mark the moments yourself, then add captions, a look and effects before exporting. See what's coming on the roadmap.</span>
           </div>
           <Button onClick={() => onNavigate("roadmap")}>Roadmap</Button>
         </Panel>

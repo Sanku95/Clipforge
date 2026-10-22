@@ -38,7 +38,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
       <div className="mt-auto px-2 text-[11px] leading-relaxed text-mute">
         Your videos stay on this device.
         <br />
-        No telemetry. YouTube links go to Ssemble only if you use AI clips.
+        No telemetry, no accounts.
       </div>
     </nav>
   );

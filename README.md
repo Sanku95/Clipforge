@@ -14,20 +14,9 @@ The same editor runs in the browser: **https://sanku95.github.io/Clipforge/** (d
 - Limits: very large files are bounded by browser memory; preview playback needs a browser that can play H.264 (Chrome, Edge, Safari, Firefox on most systems).
 - Not built yet in either version: transcription, AI highlights, captions, face-aware framing.
 
-## AI clipping with Ssemble (Vercel)
+## Ssemble AI clipping
 
-The dashboard includes an optional Ssemble AI-clipping panel. It submits a standard YouTube video URL to Ssemble, then checks job status and displays the generated clip links. Ssemble processes the source on its service; this is **not** a local download of the original video. You can open/download generated clips and then import a downloaded clip into ClipForge's local editor.
-
-To enable this integration:
-
-1. Deploy this repository to Vercel (the `vercel.json` config builds the Vite app and exposes the `api/` functions).
-2. Obtain an active Ssemble API subscription and API key from Ssemble. Each generation request consumes one credit; Ssemble's API docs say processing typically takes 5–30 minutes.
-3. In Vercel → Project → Settings → Environment Variables, add `SSEMBLE_API_KEY` with your key **and** `CLIPFORGE_ACCESS_CODE` (at least 8 characters). The endpoints refuse to run without an access code, because every request spends a paid credit; type the code into the panel to use it. Do **not** put the key in frontend code or a `VITE_*` variable.
-4. Redeploy the project after adding the environment variable.
-
-The GitHub Pages deployment remains a static local editor and does not host the `/api` endpoints; the Ssemble panel requires the Vercel deployment. AI clipping sends the YouTube URL to Ssemble for server-side processing, so only submit videos you have the rights and permission to process. Review Ssemble's current terms and applicable platform rules before public use.
-
-Official API docs: https://www.ssemble.com/docs and https://www.ssemble.com/docs/endpoints/create-short.
+The dashboard panel for Ssemble AI clipping has been removed. The serverless endpoints it used (`api/ssemble/`) are no longer called by the app; they stay in the repository and can be deleted, and they only run if you deploy to Vercel with a `SSEMBLE_API_KEY`.
 
 ## What works today
 
@@ -82,4 +71,4 @@ cargo test -p clipforge-core          # core unit + end-to-end tests (needs ffmp
 
 ## Privacy
 
-Videos are read and processed locally and are never uploaded; there is no analytics. (The optional Ssemble AI-clips panel on the website sends a YouTube link to Ssemble.) Project data is one JSON file in the app's data folder (`~/Library/Application Support/app.clipforge.desktop/projects.json`).
+Videos are read and processed locally and are never uploaded; there is no analytics. Project data is one JSON file in the app's data folder (`~/Library/Application Support/app.clipforge.desktop/projects.json`).

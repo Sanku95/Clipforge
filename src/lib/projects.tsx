@@ -75,7 +75,15 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const remove = useCallback((id: string) => setProjects((prev) => prev.filter((p) => p.id !== id)), []);
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+  const remove = useCallback((id: string) => {
+    const gone = projectsRef.current.find((p) => p.id === id);
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    // Free the stored copy of the video too, unless another project still uses it.
+    const path = gone?.source?.path;
+    if (path && !projectsRef.current.some((p) => p.id !== id && p.source?.path === path)) void api.forgetSource(path);
+  }, []);
 
   const value = useMemo(
     () => ({ projects, loading, loadError, saveError, create, update, remove }),

@@ -32,7 +32,7 @@ export function Roadmap() {
       </ul>
       <Panel className="p-4 text-[13px] text-mute">
         <h2 className="mb-1 text-[14px] font-medium text-ink">Privacy</h2>
-        ClipForge edits videos on this device only. It has no accounts and no analytics, and your video files are never uploaded. The optional AI-clips panel sends a YouTube link (not a file) to Ssemble. On the website, project
+        ClipForge edits videos on this device only. It has no accounts and no analytics, and your video files are never uploaded. On the website, project
         data is stored in your browser; in the Mac app it is a small JSON file in the app's data folder.
       </Panel>
     </div>

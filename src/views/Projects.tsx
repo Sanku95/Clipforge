@@ -66,7 +66,7 @@ export function Projects({ onOpen }: { onOpen: (id: string) => void }) {
                 <div className="mt-3 flex justify-end border-t border-line pt-3">
                   {confirmId === p.id ? (
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="text-mute">Delete this project? Your video file is not touched.</span>
+                      <span className="text-mute">Delete this project? Your original video file is not touched.</span>
                       <Button variant="danger" onClick={() => { remove(p.id); setConfirmId(null); }}>
                         Delete
                       </Button>

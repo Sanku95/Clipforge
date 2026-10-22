@@ -122,6 +122,24 @@ function setPreviewState(path: string, st: PreviewState) {
 }
 /** Build the small preview copy in the background; the editor is usable (time fields, export) meanwhile. */
 const MAX_AUTO_PREVIEW_SECONDS = 15 * 60;
+/** Browser only: drop the app's stored copy of an imported video (and its preview) once its project is deleted. Never touches the user's original file. */
+async function forgetStoredVideo(path: string): Promise<void> {
+  browserFiles.delete(path);
+  infoCache.delete(path);
+  previewStates.delete(path);
+  const url = objectUrls.get(path);
+  if (url) { URL.revokeObjectURL(url); objectUrls.delete(path); }
+  try {
+    const d = await db();
+    await new Promise<void>((resolve, reject) => {
+      const tx = d.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(path);
+      tx.objectStore(STORE).delete(`${path}:preview`);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { /* storage unavailable: nothing was kept */ }
+}
 async function ensurePreview(file: File, path: string, duration: number) {
   if (previewStates.get(path)?.status === "pending" || previewStates.get(path)?.status === "ready") return;
   if (await getBlob(`${path}:preview`).catch(() => null)) { setPreviewState(path, { status: "ready" }); return; }
@@ -266,6 +284,7 @@ export const api = {
   saveProjects: (projects:Project[]) => isDesktop() ? call<void>("save_projects",{projects}) : Promise.resolve().then(()=>localStorage.setItem("clipforge.projects",JSON.stringify(projects))),
   defaultOutputDir: () => isDesktop() ? call<string>("default_output_dir") : Promise.resolve("Downloads (browser-managed)"),
   revealInFinder: (path:string) => isDesktop() ? call<void>("reveal_in_finder",{path}) : Promise.resolve(),
+  forgetSource: (path:string) => isDesktop() ? Promise.resolve() : forgetStoredVideo(path),
   cancelExport: () => isDesktop() ? call<void>("cancel_export") : Promise.resolve(cancelWasm()),
   exportClips: (job:{source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[];captions?:BurnCaptions;effects?:BurnEffects}) => isDesktop() ? call<ClipOutcome[]>("export_clips",{job}) : wasmBrowserExport(job).catch((e) => { if (e instanceof EngineLoadError) return browserExport(job); throw e; }),
   onExportProgress: (cb:(p:ExportProgress)=>void):Promise<UnlistenFn> => isDesktop() ? listen<ExportProgress>("export-progress",e=>cb(e.payload)) : Promise.resolve((()=>{progressListeners.push(cb);return()=>{progressListeners=progressListeners.filter(x=>x!==cb)}})())
