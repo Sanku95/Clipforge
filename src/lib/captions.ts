@@ -313,14 +313,19 @@ export function spreadLyrics(texts: string[], start: number, end: number): Capti
   });
 }
 
-/** Time lyric lines from tap times: line i starts at taps[i] and ends at the next tap (at most 8 s, never past `end`). Untapped lines are left out. */
-export function lyricsFromTaps(texts: string[], taps: number[], end: number): CaptionLine[] {
+/** One press while syncing: the start of the next lyric line, or (gap) the point where the singing stops and only music plays. */
+export interface LyricTap { t: number; gap?: boolean }
+
+/** Time lyric lines from taps: a line starts at its tap and ends at the next tap or music-only mark (at most 8 s, never past `end`). Untapped lines are left out. */
+export function lyricsFromTaps(texts: string[], taps: LyricTap[], end: number): CaptionLine[] {
   const out: CaptionLine[] = [];
-  const n = Math.min(texts.length, taps.length);
-  for (let i = 0; i < n; i++) {
-    const s = taps[i];
-    const e = Math.min(i + 1 < n ? taps[i + 1] : Infinity, s + LRC_MAX_HOLD, end);
-    if (e - s >= 0.2) out.push({ id: `l${i + 1}-${Math.round(s * 1000)}`, text: texts[i], start: s, end: e });
+  let li = 0;
+  for (let k = 0; k < taps.length && li < texts.length; k++) {
+    if (taps[k].gap) continue;
+    const s = taps[k].t;
+    const e = Math.min(k + 1 < taps.length ? taps[k + 1].t : Infinity, s + LRC_MAX_HOLD, end);
+    if (e - s >= 0.2) out.push({ id: `l${li + 1}-${Math.round(s * 1000)}`, text: texts[li], start: s, end: e });
+    li++;
   }
   return out;
 }

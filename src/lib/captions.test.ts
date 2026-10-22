@@ -171,8 +171,12 @@ describe("lyrics timing", () => {
     expect(out[1].end - out[1].start).toBeGreaterThan(out[0].end - out[0].start);
   });
   it("times lines from taps, capped at 8 s and at the range end, leaving untapped lines out", () => {
-    const out = lyricsFromTaps(["a", "b", "c", "d"], [10, 12, 30], 33);
+    const out = lyricsFromTaps(["a", "b", "c", "d"], [{ t: 10 }, { t: 12 }, { t: 30 }], 33);
     expect(out.map((l) => [l.text, l.start, l.end])).toEqual([["a", 10, 12], ["b", 12, 20], ["c", 30, 33]]);
+  });
+  it("ends a line at a music-only mark and leaves the gap empty until the next line", () => {
+    const out = lyricsFromTaps(["a", "b"], [{ t: 10 }, { t: 14, gap: true }, { t: 25 }], 40);
+    expect(out.map((l) => [l.text, l.start, l.end])).toEqual([["a", 10, 14], ["b", 25, 33]]);
   });
   it("handles Kannada", () => {
     expect(fontFor("pop", "ನಮಸ್ಕಾರ")).toBe("kannada");
