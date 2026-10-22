@@ -59,10 +59,11 @@ export function tidyWords(words: CaptionWord[]): CaptionWord[] {
   return out;
 }
 
-export type ModelSize = "tiny" | "base";
+export type ModelSize = "tiny" | "base" | "small";
 export const MODEL_IDS: Record<ModelSize, string> = {
   tiny: "onnx-community/whisper-tiny_timestamped",
-  base: "onnx-community/whisper-base_timestamped"
+  base: "onnx-community/whisper-base_timestamped",
+  small: "onnx-community/whisper-small_timestamped"
 };
 
 /** Fraction of the model download finished, from transformers.js progress events (per-file or aggregate). */

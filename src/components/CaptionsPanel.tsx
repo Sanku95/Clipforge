@@ -7,10 +7,11 @@ import type { Project } from "../lib/types";
 import { Button, ErrorBanner, Panel } from "./ui";
 import { CaptionText, useCaptionFonts } from "./CaptionOverlay";
 
-const LANGS: [string, string][] = [["auto", "Auto-detect"], ["english", "English"], ["hindi", "Hindi"], ["marathi", "Marathi"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["german", "German"], ["arabic", "Arabic"], ["indonesian", "Indonesian"], ["japanese", "Japanese"], ["korean", "Korean"]];
+const LANGS: [string, string][] = [["auto", "Auto-detect"], ["english", "English"], ["hindi", "Hindi"], ["kannada", "Kannada"], ["tamil", "Tamil"], ["telugu", "Telugu"], ["malayalam", "Malayalam"], ["marathi", "Marathi"], ["bengali", "Bengali"], ["gujarati", "Gujarati"], ["punjabi", "Punjabi"], ["urdu", "Urdu"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["german", "German"], ["arabic", "Arabic"], ["indonesian", "Indonesian"], ["japanese", "Japanese"], ["korean", "Korean"]];
 const MODELS: { id: TranscribeOptions["model"]; label: string }[] = [
   { id: "tiny", label: "Fast (about 40 MB download)" },
-  { id: "base", label: "Better accuracy (about 80 MB download)" }
+  { id: "base", label: "Better accuracy (about 80 MB download)" },
+  { id: "small", label: "Best for Indian languages and songs (about 250 MB, slower)" }
 ];
 const POSITIONS: CaptionPosition[] = ["top", "middle", "bottom"];
 
@@ -105,6 +106,7 @@ export function CaptionsPanel({ project, range, onChange, onSeek }: Props) {
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
         </label>
+        <p className="text-[11px] leading-snug text-mute">Pick the spoken language instead of Auto-detect. Songs with music are hard for speech models, so expect mistakes there. If the text is wrong, import a .srt or edit the lines below.</p>
         <div className="flex gap-2">
           <Button variant="primary" className="flex-1" onClick={generate} busy={busy} disabled={!src}><Mic className="h-4 w-4" /> {busy ? statusText : "Generate from speech"}</Button>
           <Button onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Import a .srt subtitle file"><FileUp className="h-4 w-4" /> .srt</Button>
