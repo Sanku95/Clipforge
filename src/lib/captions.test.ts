@@ -39,7 +39,7 @@ describe("buildAss", () => {
     const ass = buildAss(lines, defaultStyle("classic"), 606, 1080);
     expect(ass).toContain("PlayResX: 606");
     expect(ass).toContain("PlayResY: 1080");
-    expect((ass.match(/^Style: /gm) ?? []).length).toBe(4);
+    expect((ass.match(/^Style: /gm) ?? []).length).toBe(5);
     expect(ass).toContain("Style: poppins,Poppins ExtraBold,");
     expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:02.00,poppins,,0,0,0,,Hello brave world");
   });
@@ -143,5 +143,41 @@ describe("parseSrt", () => {
   });
   it("keeps Hindi text intact", () => {
     expect(parseSrt("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते दुनिया\n")[0].text).toBe("नमस्ते दुनिया");
+  });
+});
+
+import { hasUnsupportedScript, lyricLines, lyricsFromTaps, parseLrc, spreadLyrics } from "./captions";
+describe("parseLrc", () => {
+  it("reads timestamps, ends a line at the next one, and skips metadata", () => {
+    const out = parseLrc("[ar:Someone]\n[00:12.50]first line\n[00:15.00]second <00:15.50>line\n[00:18.25]");
+    expect(out.map((l) => l.text)).toEqual(["first line", "second line"]);
+    expect(out[0]).toMatchObject({ start: 12.5, end: 15 });
+    expect(out[1]).toMatchObject({ start: 15, end: 18.25 });
+  });
+  it("supports several stamps on one line and caps a long hold", () => {
+    const out = parseLrc("[00:10.00][01:00.00]chorus\n[05:00.00]end");
+    expect(out.filter((l) => l.text === "chorus").map((l) => l.start)).toEqual([10, 60]);
+    expect(out[0].end).toBe(18); // 8 s cap
+  });
+  it("returns nothing for text without timestamps", () => { expect(parseLrc("just words")).toEqual([]); });
+});
+describe("lyrics timing", () => {
+  it("drops blank lines", () => { expect(lyricLines(" a \r\n\r\n b\n")).toEqual(["a", "b"]); });
+  it("spreads lines across the range, longer lines getting more time", () => {
+    const out = spreadLyrics(["short", "a much longer lyric line here"], 10, 40);
+    expect(out[0].start).toBe(10);
+    expect(out[1].end).toBeCloseTo(40);
+    expect(out[0].end).toBe(out[1].start);
+    expect(out[1].end - out[1].start).toBeGreaterThan(out[0].end - out[0].start);
+  });
+  it("times lines from taps, capped at 8 s and at the range end, leaving untapped lines out", () => {
+    const out = lyricsFromTaps(["a", "b", "c", "d"], [10, 12, 30], 33);
+    expect(out.map((l) => [l.text, l.start, l.end])).toEqual([["a", 10, 12], ["b", 12, 20], ["c", 30, 33]]);
+  });
+  it("handles Kannada", () => {
+    expect(fontFor("pop", "ನಮಸ್ಕಾರ")).toBe("kannada");
+    expect(hasUnsupportedScript("ನಮಸ್ಕಾರ")).toBe(false);
+    expect(hasUnsupportedScript("தமிழ்")).toBe(true);
+    expect(hasUnsupportedScript("hello हिन्दी")).toBe(false);
   });
 });

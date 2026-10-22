@@ -4,7 +4,7 @@
  * Single-thread core => no SharedArrayBuffer / special headers needed (works on GitHub Pages).
  */
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { buildAss, linesForClip, outputSize, type CaptionLine, type CaptionStyle, type FontKey } from "./captions";
+import { buildAss, hasKannada, linesForClip, outputSize, type CaptionLine, type CaptionStyle, type FontKey } from "./captions";
 import { loadFontBytes } from "./fonts";
 import coreURL from "@ffmpeg/core?url";
 import wasmURL from "@ffmpeg/core/wasm?url";
@@ -189,9 +189,10 @@ export interface BurnCaptions { lines: CaptionLine[]; style: CaptionStyle; srcWi
 const FONT_DIR = "/fonts";
 const FONT_FILES: FontKey[] = ["poppins", "anton", "bangers", "devanagari"];
 /** libass has no system fonts in wasm, so the bundled fonts are written into FFmpeg's in-memory filesystem. */
-async function installFonts(ff: FFmpeg) {
+async function installFonts(ff: FFmpeg, lines: { text: string }[]) {
   await ff.createDir(FONT_DIR).catch(() => undefined);
-  for (const k of FONT_FILES) await ff.writeFile(`${FONT_DIR}/${k}.ttf`, await loadFontBytes(k));
+  const keys: FontKey[] = lines.some((l) => hasKannada(l.text)) ? [...FONT_FILES, "kannada"] : FONT_FILES; // Kannada font only when needed
+  for (const k of keys) await ff.writeFile(`${FONT_DIR}/${k}.ttf`, await loadFontBytes(k));
 }
 
 export function exportClipsWasm(
@@ -208,7 +209,7 @@ export function exportClipsWasm(
     cancelled = false;
     const results: WasmResult[] = [];
     const used = new Set<string>();
-    if (captions && captions.lines.length) await installFonts(ff);
+    if (captions && captions.lines.length) await installFonts(ff, captions.lines);
     await withInput(ff, file, async (path) => {
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i];

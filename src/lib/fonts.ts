@@ -3,9 +3,10 @@ import anton from "../assets/fonts/Anton_400Regular.ttf?url";
 import bangers from "../assets/fonts/Bangers_400Regular.ttf?url";
 import poppins from "../assets/fonts/Poppins_800ExtraBold.ttf?url";
 import devanagari from "../assets/fonts/NotoSansDevanagari_800ExtraBold.ttf?url";
+import kannada from "../assets/fonts/NotoSansKannada_800ExtraBold.ttf?url";
 import { FONT_FAMILY, type FontKey } from "./captions";
 
-export const FONT_URLS: Record<FontKey, string> = { anton, bangers, poppins, devanagari };
+export const FONT_URLS: Record<FontKey, string> = { anton, bangers, poppins, devanagari, kannada };
 
 /** CSS @font-face rules for the live preview overlay (same files the export uses). */
 export function fontFaceCss(): string {

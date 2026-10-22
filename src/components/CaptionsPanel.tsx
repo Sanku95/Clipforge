@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { Captions as CaptionsIcon, Download, FileUp, Mic, Trash2 } from "lucide-react";
+import { Captions as CaptionsIcon, Crosshair, Download, FileUp, Mic, Trash2 } from "lucide-react";
 import { api, type TranscribeOptions, type TranscribeStatus } from "../lib/api";
-import { CAPTION_PRESETS, applyPreset, defaultStyle, parseSrt, toSrt, type CaptionLine, type CaptionPosition, type CaptionStyle } from "../lib/captions";
+import { CAPTION_PRESETS, applyPreset, defaultStyle, hasUnsupportedScript, parseLrc, parseSrt, toSrt, type CaptionLine, type CaptionPosition, type CaptionStyle } from "../lib/captions";
 import { formatTime } from "../lib/time";
 import type { Project } from "../lib/types";
 import { Button, ErrorBanner, Panel } from "./ui";
 import { CaptionText, useCaptionFonts } from "./CaptionOverlay";
+import { LyricsSync } from "./LyricsSync";
 
 const LANGS: [string, string][] = [["auto", "Auto-detect"], ["english", "English"], ["hindi", "Hindi"], ["kannada", "Kannada"], ["tamil", "Tamil"], ["telugu", "Telugu"], ["malayalam", "Malayalam"], ["marathi", "Marathi"], ["bengali", "Bengali"], ["gujarati", "Gujarati"], ["punjabi", "Punjabi"], ["urdu", "Urdu"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["german", "German"], ["arabic", "Arabic"], ["indonesian", "Indonesian"], ["japanese", "Japanese"], ["korean", "Korean"]];
 const MODELS: { id: TranscribeOptions["model"]; label: string }[] = [
@@ -21,9 +22,12 @@ interface Props {
   range: { start: number; end: number };
   onChange: (patch: (p: Project) => Project) => void;
   onSeek: (t: number) => void;
+  playhead: number;
+  onPlayFrom: (t: number) => void;
+  onPause: () => void;
 }
 
-export function CaptionsPanel({ project, range, onChange, onSeek }: Props) {
+export function CaptionsPanel({ project, range, onChange, onSeek, playhead, onPlayFrom, onPause }: Props) {
   useCaptionFonts();
   const src = project.source;
   const lines = project.captions ?? [];
@@ -61,8 +65,9 @@ export function CaptionsPanel({ project, range, onChange, onSeek }: Props) {
   const importSrt = async (file: File) => {
     setError(null); setNotice(null);
     try {
-      const parsed = parseSrt(await file.text());
-      if (!parsed.length) throw new Error("No captions were found in that file. Is it a .srt subtitle file?");
+      const raw = await file.text();
+      const parsed = /\.lrc$/i.test(file.name) || !raw.includes("-->") ? parseLrc(raw) : parseSrt(raw);
+      if (!parsed.length) throw new Error("No captions were found in that file. Is it a .srt or .lrc (synced lyrics) file?");
       setLines(parsed);
       setNotice(`Imported ${parsed.length} caption lines.`);
     } catch (e) {
@@ -109,14 +114,20 @@ export function CaptionsPanel({ project, range, onChange, onSeek }: Props) {
         <p className="text-[11px] leading-snug text-mute">Pick the spoken language instead of Auto-detect. Songs with music are hard for speech models, so expect mistakes there. If the text is wrong, import a .srt or edit the lines below.</p>
         <div className="flex gap-2">
           <Button variant="primary" className="flex-1" onClick={generate} busy={busy} disabled={!src}><Mic className="h-4 w-4" /> {busy ? statusText : "Generate from speech"}</Button>
-          <Button onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Import a .srt subtitle file"><FileUp className="h-4 w-4" /> .srt</Button>
-          <input ref={fileRef} type="file" accept=".srt,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importSrt(f); e.target.value = ""; }} />
+          <Button onClick={() => fileRef.current?.click()} disabled={busy} aria-label="Import a .srt or .lrc file"><FileUp className="h-4 w-4" /> .srt / .lrc</Button>
+          <input ref={fileRef} type="file" accept=".srt,.lrc,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importSrt(f); e.target.value = ""; }} />
         </div>
         <p className="text-[11px] leading-relaxed text-mute">Speech is detected on your device; the audio is not uploaded. The first run downloads the speech model from huggingface.co once, and your browser keeps it. Long videos can take several minutes, so keep this tab open.</p>
       </div>
 
+      <LyricsSync range={range} playhead={playhead} existing={lines} onPlayFrom={onPlayFrom} onPause={onPause} disabled={busy}
+        onApply={(next, msg) => { setError(null); setNotice(msg); if (next !== lines) setLines(next); }} />
+
       {error && <div className="mt-3"><ErrorBanner onDismiss={() => setError(null)}>{error}</ErrorBanner></div>}
       {notice && <p role="status" className="mt-3 text-[12px] text-mute">{notice}</p>}
+      {(project.burnCaptions ?? true) && lines.some((l) => hasUnsupportedScript(l.text)) && (
+        <p role="alert" className="mt-3 text-[12px] text-warn">Some lines use a script the exported video cannot draw yet (only English, Hindi and Kannada fonts are built in). They show in the preview but would be blank in the export.</p>
+      )}
 
       {lines.length > 0 && (
         <>
@@ -125,6 +136,7 @@ export function CaptionsPanel({ project, range, onChange, onSeek }: Props) {
               <li key={l.id} className="flex items-start gap-2">
                 <button className="mt-1.5 w-[74px] shrink-0 rounded bg-raised px-1 py-0.5 text-left font-mono text-[10px] text-mute hover:text-ink" onClick={() => onSeek(l.start)} title="Jump to this caption">{formatTime(l.start)}</button>
                 <textarea value={l.text} rows={Math.min(3, Math.max(1, Math.ceil(l.text.length / 34)))} onChange={(e) => editLine(l.id, { text: e.target.value })} aria-label={`Caption at ${formatTime(l.start)}`} className="min-w-0 flex-1 resize-none rounded-md border border-line bg-panel px-2 py-1 text-[13px] leading-snug text-ink focus:border-ember focus:outline-none" />
+                <button onClick={() => editLine(l.id, { start: playhead, end: l.end > playhead + 0.3 ? l.end : playhead + 2 })} className="mt-1 rounded p-1 text-mute hover:text-ink" aria-label="Set this line to start at the playhead" title="Set this line to start at the playhead"><Crosshair className="h-3.5 w-3.5" /></button>
                 <button onClick={() => setLines(lines.filter((x) => x.id !== l.id))} className="mt-1 rounded p-1 text-mute hover:text-bad" aria-label="Delete caption line"><Trash2 className="h-3.5 w-3.5" /></button>
               </li>
             ))}

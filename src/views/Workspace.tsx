@@ -452,6 +452,9 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
               range={{ start: inPoint, end: outPoint }}
               onChange={(patch) => update(project.id, patch)}
               onSeek={seek}
+              playhead={playhead}
+              onPlayFrom={(t) => { seek(t); stopAt.current = null; void videoRef.current?.play().catch(() => setPreviewFailed(true)); }}
+              onPause={() => videoRef.current?.pause()}
             />
             <ExportPanel
               project={project}

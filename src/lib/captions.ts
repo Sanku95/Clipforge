@@ -20,19 +20,20 @@ export interface CaptionStyle {
   accent: string;
 }
 
-export type FontKey = "poppins" | "anton" | "bangers" | "devanagari";
+export type FontKey = "poppins" | "anton" | "bangers" | "devanagari" | "kannada";
 export const FONT_FAMILY: Record<FontKey, string> = {
   poppins: "Poppins ExtraBold",
   anton: "Anton",
   bangers: "Bangers",
-  devanagari: "Noto Sans Devanagari ExtraBold"
+  devanagari: "Noto Sans Devanagari ExtraBold",
+  kannada: "Noto Sans Kannada ExtraBold"
 };
 
 /**
  * libass (like Windows GDI) treats "font size" as the whole line height (winAscent+winDescent), while CSS
  * font-size is the em. These ratios come from each bundled font's OS/2 table so that export size == preview size.
  */
-export const FONT_CELL: Record<FontKey, number> = { poppins: 1.762, anton: 1.7334, bangers: 1.757, devanagari: 1.906 };
+export const FONT_CELL: Record<FontKey, number> = { poppins: 1.762, anton: 1.7334, bangers: 1.757, devanagari: 1.906, kannada: 1.645 };
 
 export interface PresetDef {
   id: CaptionPresetId;
@@ -65,8 +66,15 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 export const hasDevanagari = (s: string) => DEVANAGARI.test(s);
 /** The decorative Latin fonts have no Devanagari glyphs; use Noto for those lines. */
 export function fontFor(preset: CaptionPresetId, text: string): FontKey {
+  if (hasKannada(text)) return "kannada";
   return hasDevanagari(text) ? "devanagari" : presetDef(preset).font;
 }
+
+const KANNADA = /[\u0C80-\u0CFF]/;
+export const hasKannada = (s: string) => KANNADA.test(s);
+/** Scripts the burned-in export has no bundled font for (they would show as empty boxes). */
+const UNSUPPORTED_SCRIPT = /[\u0980-\u0BFF\u0C00-\u0C7F\u0D00-\u0DFF\u0600-\u06FF]/;
+export const hasUnsupportedScript = (s: string) => UNSUPPORTED_SCRIPT.test(s);
 
 // ---------- geometry ----------
 const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
@@ -147,7 +155,7 @@ function styleParams(style: CaptionStyle, fs: number): StyleParams {
       return { primary: assColor("#FFFFFF"), secondary: assColor("#FFFFFF"), outline: assColor("#000000"), back: assColor("#000000", 0x80), bold: 0, borderStyle: 1, outlineW: fs * 0.08, shadow: 0 };
   }
 }
-const FONT_KEYS: FontKey[] = ["poppins", "anton", "bangers", "devanagari"];
+const FONT_KEYS: FontKey[] = ["poppins", "anton", "bangers", "devanagari", "kannada"];
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
 
 /** Build an .ass file for one clip. `lines` must already be relative to the clip (see linesForClip). */
@@ -258,4 +266,61 @@ export function parseSrt(input: string): CaptionLine[] {
     out.push({ id: `s${out.length + 1}-${Math.round(start * 1000)}`, start, end, text: body.replace(/\n+/g, " ") });
   }
   return out.sort((a, b) => a.start - b.start);
+}
+
+
+// ---------- Lyrics: .lrc import and timing pasted lyrics ----------
+
+const LRC_STAMP = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+const LRC_MAX_HOLD = 8;
+
+/** Parse synced lyrics (.lrc). A line shows until the next timestamp (at most 8 s); an empty timed line just ends the previous one. */
+export function parseLrc(input: string): CaptionLine[] {
+  const entries: { t: number; text: string }[] = [];
+  for (const raw of input.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n")) {
+    const stamps = [...raw.matchAll(LRC_STAMP)];
+    if (!stamps.length) continue;
+    const text = raw.replace(LRC_STAMP, "").replace(/<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>/g, "").trim();
+    for (const m of stamps) entries.push({ t: Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number(m[3].padEnd(3, "0")) / 1000 : 0), text });
+  }
+  entries.sort((a, b) => a.t - b.t);
+  const out: CaptionLine[] = [];
+  entries.forEach((e, i) => {
+    if (!e.text) return;
+    const next = entries.slice(i + 1).find((n) => n.t > e.t);
+    const end = Math.min(next ? next.t : e.t + 4, e.t + LRC_MAX_HOLD);
+    if (end > e.t) out.push({ id: `l${out.length + 1}-${Math.round(e.t * 1000)}`, start: e.t, end, text: e.text });
+  });
+  return out;
+}
+
+/** Non-empty trimmed lines of pasted lyrics. */
+export function lyricLines(text: string): string[] {
+  return text.replace(/\r\n?/g, "\n").split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/** Spread lines over [start, end] in proportion to their length. A rough first draft; fine-tune with tap-to-sync. */
+export function spreadLyrics(texts: string[], start: number, end: number): CaptionLine[] {
+  if (!texts.length || !(end > start)) return [];
+  const weights = texts.map((t) => Math.max(8, [...t].length));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return texts.map((text, i) => {
+    const s = start + ((end - start) * acc) / total;
+    acc += weights[i];
+    const e = start + ((end - start) * acc) / total;
+    return { id: `l${i + 1}-${Math.round(s * 1000)}`, text, start: s, end: e };
+  });
+}
+
+/** Time lyric lines from tap times: line i starts at taps[i] and ends at the next tap (at most 8 s, never past `end`). Untapped lines are left out. */
+export function lyricsFromTaps(texts: string[], taps: number[], end: number): CaptionLine[] {
+  const out: CaptionLine[] = [];
+  const n = Math.min(texts.length, taps.length);
+  for (let i = 0; i < n; i++) {
+    const s = taps[i];
+    const e = Math.min(i + 1 < n ? taps[i + 1] : Infinity, s + LRC_MAX_HOLD, end);
+    if (e - s >= 0.2) out.push({ id: `l${i + 1}-${Math.round(s * 1000)}`, text: texts[i], start: s, end: e });
+  }
+  return out;
 }
