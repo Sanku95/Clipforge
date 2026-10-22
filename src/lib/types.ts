@@ -1,4 +1,5 @@
 import type { CaptionLine, CaptionStyle } from "./captions";
+import type { EffectsSettings } from "./effects";
 export type Preset = "original" | "vertical" | "square" | "landscape";
 
 export interface VideoInfo {
@@ -36,6 +37,8 @@ export interface Project {
   captionStyle?: CaptionStyle;
   /** Burn captions into exported videos. */
   burnCaptions?: boolean;
+  /** Colour look and finishing touches (browser export only). */
+  effects?: EffectsSettings;
   lastExport: { at: string; files: number } | null;
 }
 

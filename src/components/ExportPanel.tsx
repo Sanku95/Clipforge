@@ -4,6 +4,7 @@ import { api, isDesktop, pickFolder } from "../lib/api";
 import type { ClipOutcome, ExportProgress, Preset, Project } from "../lib/types";
 import { formatBytes, formatDuration } from "../lib/time";
 import { defaultStyle } from "../lib/captions";
+import { hasEffects } from "../lib/effects";
 import { Button, ErrorBanner, Panel, SuccessBanner } from "./ui";
 
 const PRESETS: { id: Preset; label: string; sub: string; box: string }[] = [
@@ -62,6 +63,7 @@ export function ExportPanel({ project, sourceMissing, onChange }: Props) {
         preset: project.preset,
         pan: project.pan,
         clips: project.clips.map((c) => ({ id: c.id, name: c.name, start: c.start, end: c.end })),
+        ...(hasEffects(project.effects) && !isDesktop() ? { effects: { settings: project.effects!, srcWidth: project.source.width, srcHeight: project.source.height } } : {}),
         ...(burn ? { captions: { lines: project.captions ?? [], style: project.captionStyle ?? defaultStyle("pop"), srcWidth: project.source.width, srcHeight: project.source.height } } : {})
       });
       if (!mounted.current) return;

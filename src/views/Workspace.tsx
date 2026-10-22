@@ -11,6 +11,9 @@ import { ClipList } from "../components/ClipList";
 import { ExportPanel } from "../components/ExportPanel";
 import { CaptionsPanel } from "../components/CaptionsPanel";
 import { CaptionOverlay } from "../components/CaptionOverlay";
+import { EffectsPanel } from "../components/EffectsPanel";
+import { EffectsOverlay } from "../components/EffectsOverlay";
+import { hasEffects, lookDef } from "../lib/effects";
 import { defaultStyle } from "../lib/captions";
 import { Badge, Button, ErrorBanner, Panel, Spinner } from "../components/ui";
 
@@ -345,7 +348,10 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                       ref={videoRef}
                       src={sourceUrl ?? undefined}
                       className={`h-full w-full ${frameRatio ? "object-cover" : "object-contain"}`}
-                      style={frameRatio ? { objectPosition: `${project.pan * 100}% ${project.pan * 100}%` } : undefined}
+                      style={{
+                        ...(frameRatio ? { objectPosition: `${project.pan * 100}% ${project.pan * 100}%` } : {}),
+                        ...(project.effects && project.effects.look !== "none" ? { filter: lookDef(project.effects.look).css } : {})
+                      }}
                       preload="metadata"
                       playsInline
                       onPlay={() => setPlaying(true)}
@@ -357,6 +363,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
                       onError={() => setPreviewFailed(true)}
                       aria-label="Video preview"
                     />
+                    {hasEffects(project.effects) && <EffectsOverlay effects={project.effects!} time={playhead} range={{ start: inPoint, end: outPoint }} />}
                     {source && (project.captions?.length ?? 0) > 0 && (
                       <CaptionOverlay
                         lines={project.captions ?? []}
@@ -456,6 +463,7 @@ export function Workspace({ projectId, onBack }: { projectId: string; onBack: ()
               onPlayFrom={(t) => { seek(t); stopAt.current = null; void videoRef.current?.play().catch(() => setPreviewFailed(true)); }}
               onPause={() => videoRef.current?.pause()}
             />
+            {!isDesktopBrowser() && <EffectsPanel project={project} onChange={(patch) => update(project.id, patch)} />}
             <ExportPanel
               project={project}
               sourceMissing={sourceMissing}

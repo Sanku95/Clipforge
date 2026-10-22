@@ -4,6 +4,7 @@
  * Single-thread core => no SharedArrayBuffer / special headers needed (works on GitHub Pages).
  */
 import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { videoGraphArgs, type EffectsSettings } from "./effects";
 import { buildAss, hasKannada, linesForClip, outputSize, type CaptionLine, type CaptionStyle, type FontKey } from "./captions";
 import { loadFontBytes } from "./fonts";
 import coreURL from "@ffmpeg/core?url";
@@ -184,6 +185,7 @@ export function safeName(name: string): string {
   return name.replace(/[^a-z0-9-_ ]/gi, "").trim().replace(/\s+/g, "-") || "clip";
 }
 
+export interface BurnEffects { settings: EffectsSettings; srcWidth: number; srcHeight: number }
 export interface BurnCaptions { lines: CaptionLine[]; style: CaptionStyle; srcWidth: number; srcHeight: number }
 
 const FONT_DIR = "/fonts";
@@ -202,7 +204,8 @@ export function exportClipsWasm(
   clips: WasmClip[],
   onProgress: (clipId: string, index: number, fraction: number) => void,
   verify: (blob: Blob) => Promise<{ duration: number; width: number; height: number }>,
-  captions?: BurnCaptions
+  captions?: BurnCaptions,
+  effects?: BurnEffects
 ): Promise<WasmResult[]> {
   return serial(async () => {
     const ff = await engine();
@@ -223,7 +226,7 @@ export function exportClipsWasm(
           while (used.has(base)) base = `${safeName(clip.name)}-${n++}`;
           used.add(base);
           const out = `${base}.mp4`;
-          let vf = `${cropFilter(preset, pan)},format=yuv420p`;
+          let subtitles: string | undefined;
           if (captions) {
             const lines = linesForClip(captions.lines, clip.start, clip.end);
             if (lines.length) {
@@ -231,12 +234,13 @@ export function exportClipsWasm(
               const assName = `cap-${i}.ass`;
               await ff.writeFile(assName, new TextEncoder().encode(buildAss(lines, captions.style, width, height)));
               // Captions are drawn after the crop so they sit inside the exported frame.
-              vf = `${cropFilter(preset, pan)},subtitles=filename=${assName}:fontsdir=${FONT_DIR},format=yuv420p`;
+              subtitles = `subtitles=filename=${assName}:fontsdir=${FONT_DIR}`;
             }
           }
+          const size = effects ? outputSize(preset, effects.srcWidth, effects.srcHeight) : { width: 0, height: 0 };
           const code = await ff.exec([
             "-hide_banner", "-ss", clip.start.toFixed(3), "-i", path, "-t", dur.toFixed(3),
-            "-vf", vf,
+            ...videoGraphArgs({ crop: cropFilter(preset, pan), subtitles, effects: effects?.settings, dur, outW: size.width, outH: size.height }),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", out
           ]);

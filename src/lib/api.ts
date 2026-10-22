@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { ClipOutcome, ExportProgress, Preset, Project, VideoInfo } from "./types";
-import type { BurnCaptions } from "./wasm";
+import type { BurnCaptions, BurnEffects } from "./wasm";
 import type { CaptionLine } from "./captions";
 import { EngineLoadError, cancelWasm, exportClipsWasm, makePreview, probe } from "./wasm";
 
@@ -182,13 +182,14 @@ function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob); const a = document.createElement("a");
   a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-async function wasmBrowserExport(job: {source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[];captions?:BurnCaptions}): Promise<ClipOutcome[]> {
+async function wasmBrowserExport(job: {source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[];captions?:BurnCaptions;effects?:BurnEffects}): Promise<ClipOutcome[]> {
   const file = await getFile(job.source);
   const results = await exportClipsWasm(
     file, job.preset, job.pan, job.clips,
     (clip_id, index, fraction) => progressListeners.forEach((cb) => cb({ clip_id, index, total: job.clips.length, fraction })),
     verifyBlob,
-    job.captions
+    job.captions,
+    job.effects
   );
   return results.map((r) => {
     if (r.ok && r.blob && r.filename) download(r.blob, r.filename);
@@ -266,7 +267,7 @@ export const api = {
   defaultOutputDir: () => isDesktop() ? call<string>("default_output_dir") : Promise.resolve("Downloads (browser-managed)"),
   revealInFinder: (path:string) => isDesktop() ? call<void>("reveal_in_finder",{path}) : Promise.resolve(),
   cancelExport: () => isDesktop() ? call<void>("cancel_export") : Promise.resolve(cancelWasm()),
-  exportClips: (job:{source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[];captions?:BurnCaptions}) => isDesktop() ? call<ClipOutcome[]>("export_clips",{job}) : wasmBrowserExport(job).catch((e) => { if (e instanceof EngineLoadError) return browserExport(job); throw e; }),
+  exportClips: (job:{source:string;out_dir:string;preset:Preset;pan:number;clips:{id:string;name:string;start:number;end:number}[];captions?:BurnCaptions;effects?:BurnEffects}) => isDesktop() ? call<ClipOutcome[]>("export_clips",{job}) : wasmBrowserExport(job).catch((e) => { if (e instanceof EngineLoadError) return browserExport(job); throw e; }),
   onExportProgress: (cb:(p:ExportProgress)=>void):Promise<UnlistenFn> => isDesktop() ? listen<ExportProgress>("export-progress",e=>cb(e.payload)) : Promise.resolve((()=>{progressListeners.push(cb);return()=>{progressListeners=progressListeners.filter(x=>x!==cb)}})())
 };
 const VIDEO_EXTENSIONS=["mp4","mov","m4v","mkv","webm","avi"];
