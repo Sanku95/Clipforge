@@ -2,6 +2,8 @@ import { Sparkles } from "lucide-react";
 import { LOOKS, defaultEffects, hasEffects, type EffectsSettings, type LookId } from "../lib/effects";
 import type { Project } from "../lib/types";
 import { Panel } from "./ui";
+import { PanelHeader } from "./PanelHeader";
+import { useCollapsed } from "../lib/useCollapsed";
 
 const TOGGLES: { key: "vignette" | "grain" | "fade" | "progress"; label: string; hint: string }[] = [
   { key: "vignette", label: "Soft vignette", hint: "Darkens the corners" },
@@ -17,13 +19,14 @@ interface Props { project: Project; onChange: (patch: (p: Project) => Project) =
 
 export function EffectsPanel({ project, onChange }: Props) {
   const fx = project.effects ?? defaultEffects();
+  const [collapsed, toggleCollapsed] = useCollapsed("effects");
   const set = (next: EffectsSettings) => onChange((p) => ({ ...p, effects: next }));
   return (
     <Panel className="p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-[14px] font-medium"><Sparkles className="h-4 w-4 text-ember" aria-hidden /> Look and effects</h2>
-        {hasEffects(fx) && <button className="text-[11px] text-mute hover:text-ink" onClick={() => set(defaultEffects())}>Reset</button>}
-      </div>
+      <PanelHeader icon={<Sparkles className="h-4 w-4 text-ember" aria-hidden />} title="Look and effects" collapsed={collapsed} onToggle={toggleCollapsed} controls="effects-body"
+        summary={hasEffects(fx) ? "On" : undefined} />
+      <div id="effects-body" hidden={collapsed}>
+      {hasEffects(fx) && <div className="mt-2 text-right"><button className="text-[11px] text-mute hover:text-ink" onClick={() => set(defaultEffects())}>Reset</button></div>}
       <div role="radiogroup" aria-label="Colour look" className="mt-3 grid grid-cols-3 gap-2">
         {LOOKS.map((l) => {
           const active = fx.look === l.id;
@@ -45,6 +48,7 @@ export function EffectsPanel({ project, onChange }: Props) {
         ))}
       </div>
       <p className="mt-3 text-[11px] leading-snug text-mute">Applied to every clip you export from the browser. The preview approximates the colour; grain and vignette make exports a little slower.</p>
+      </div>
     </Panel>
   );
 }

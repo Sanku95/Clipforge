@@ -7,6 +7,8 @@ import type { Project } from "../lib/types";
 import { Button, ErrorBanner, Panel } from "./ui";
 import { CaptionText, useCaptionFonts } from "./CaptionOverlay";
 import { LyricsSync } from "./LyricsSync";
+import { PanelHeader } from "./PanelHeader";
+import { useCollapsed } from "../lib/useCollapsed";
 
 const LANGS: [string, string][] = [["auto", "Auto-detect"], ["english", "English"], ["hindi", "Hindi"], ["kannada", "Kannada"], ["tamil", "Tamil"], ["telugu", "Telugu"], ["malayalam", "Malayalam"], ["marathi", "Marathi"], ["bengali", "Bengali"], ["gujarati", "Gujarati"], ["punjabi", "Punjabi"], ["urdu", "Urdu"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["german", "German"], ["arabic", "Arabic"], ["indonesian", "Indonesian"], ["japanese", "Japanese"], ["korean", "Korean"]];
 const MODELS: { id: TranscribeOptions["model"]; label: string }[] = [
@@ -29,6 +31,7 @@ interface Props {
 
 export function CaptionsPanel({ project, range, onChange, onSeek, playhead, onPlayFrom, onPause }: Props) {
   useCaptionFonts();
+  const [collapsed, toggleCollapsed] = useCollapsed("captions");
   const src = project.source;
   const lines = project.captions ?? [];
   const style = project.captionStyle ?? defaultStyle("pop");
@@ -87,10 +90,10 @@ export function CaptionsPanel({ project, range, onChange, onSeek, playhead, onPl
 
   return (
     <Panel className="p-4" >
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-[14px] font-medium"><CaptionsIcon className="h-4 w-4 text-ember" aria-hidden /> Captions</h2>
-        {lines.length > 0 && <span className="text-[11px] text-mute">{lines.length} lines</span>}
-      </div>
+      <PanelHeader icon={<CaptionsIcon className="h-4 w-4 text-ember" aria-hidden />} title="Captions" collapsed={collapsed} onToggle={toggleCollapsed} controls="captions-body"
+        summary={lines.length > 0 ? `${lines.length} line${lines.length === 1 ? "" : "s"}` : busy ? "Working…" : undefined} />
+      {/* Hidden, not unmounted, so pasted lyrics and a sync in progress survive collapsing. */}
+      <div id="captions-body" hidden={collapsed}>
 
       <div className="mt-3 space-y-2 rounded-lg border border-line p-3">
         <div className="grid grid-cols-2 gap-2">
@@ -187,6 +190,7 @@ export function CaptionsPanel({ project, range, onChange, onSeek, playhead, onPl
           </div>
         </>
       )}
+      </div>
     </Panel>
   );
 }
